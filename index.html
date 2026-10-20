@@ -9,12 +9,23 @@
   <body>
     <canvas id="c"></canvas>
     <div id="hud">
-      <div class="score">0</div>
+      <div class="score"></div>
       <div class="best"></div>
       <div class="msg"></div>
+      <div class="seed"></div>
       <div class="speed"></div>
       <div class="hint">← → / A D steer · ` settings</div>
     </div>
+    <section id="summary" hidden>
+      <div class="s-score"></div>
+      <div class="s-stats"></div>
+      <form class="s-seed">
+        <label for="seed-in">seed</label>
+        <input id="seed-in" spellcheck="false" autocomplete="off" maxlength="32" />
+        <button type="submit">play</button>
+      </form>
+      <div class="s-keys"><kbd>space</kbd> / <kbd>←</kbd><kbd>→</kbd> retry this seed · <kbd>R</kbd> new seed</div>
+    </section>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>

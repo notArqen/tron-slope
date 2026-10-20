@@ -5,8 +5,12 @@ import { Perf } from './core/perf.js';
 import { Wind } from './world/wind.js';
 import { WeatherDirector } from './world/weather.js';
 import { createShared, PALETTES, SLOPE_TAN, trackY } from './world/shared.js';
-import { Track, TestObstacles, puddleMaskCPU } from './world/track.js';
+import { Track, puddleMaskCPU } from './world/track.js';
 import { Ball, BALL_R } from './world/ball.js';
+import { Course } from './game/course.js';
+import { CourseView } from './game/courseView.js';
+import { seedToString, parseSeed, randomSeed } from './game/rng.js';
+import { Hud } from './ui/hud.js';
 import { City } from './world/city.js';
 import { Sky } from './world/sky.js';
 import { Dystopia, LightPool, createVolumeUniforms } from './world/dystopia.js';
@@ -37,16 +41,23 @@ const vol = createVolumeUniforms();
 const mkScene = () => new THREE.Scene();
 const L = {
   sky: mkScene(), track: mkScene(), city: mkScene(), skyline: mkScene(), drones: mkScene(), billboards: mkScene(),
-  cables: mkScene(), obstacles: mkScene(), ball: mkScene(),
+  cables: mkScene(), obstacles: mkScene(), ball: mkScene(), course: mkScene(),
 };
 const sky = new Sky(L.sky, shared);
 L.skyline.add(sky.skyline); L.sky.remove(sky.skyline);
 const track = new Track(L.track, shared);
+L.track.remove(track.mesh); // the Phase 1 placeholder deck is replaced by the streamed course
 const city = new City(L.city, shared);
 const dys = new Dystopia(mkScene(), shared, vol);
 L.drones.add(dys.drones); L.billboards.add(dys.billboards); L.cables.add(dys.cables);
-const obstacles = new TestObstacles(L.obstacles, shared);
-const ball = new Ball(L.ball, shared);
+const course = new Course();
+const courseView = new CourseView(L.course, L.obstacles, shared, course);
+// seed: #seed=XXXXXXXX in the URL replays a run; otherwise random
+const hashSeed = (location.hash.match(/seed=([^&]+)/) || [])[1];
+let seed = parseSeed(hashSeed) ?? randomSeed();
+course.minD = Math.min(1, Math.max(0, Number((location.hash.match(/[#&]d=([\d.]+)/) || [])[1]) || 0)); // debug/practice floor
+course.reset(seed);
+const ball = new Ball(L.ball, shared, course);
 const pool = new LightPool(shared);
 const depthU = { uDepth: { value: null }, uRes: { value: new THREE.Vector2(1, 1) }, uNearFar: { value: new THREE.Vector2(0.1, 3000) } };
 const particles = new Particles({ ...shared, ...vol }, depthU);
@@ -58,8 +69,9 @@ const layers = [
   { name: 'sky', scene: L.sky, reflect: true, key: null },
   { name: 'skyline + strobes', scene: L.skyline, reflect: true, key: 'strobes' },
   { name: 'city (instanced)', scene: L.city, reflect: true, key: null },
-  { name: 'track + street', scene: L.track, reflect: false, key: null },
-  { name: 'obstacles (test)', scene: L.obstacles, reflect: true, key: 'testObstacles' },
+  { name: 'street + debug gate', scene: L.track, reflect: false, key: null },
+  { name: 'course (decks + tunnels)', scene: L.course, reflect: false, key: null },
+  { name: 'obstacles', scene: L.obstacles, reflect: true, key: null },
   { name: 'ball', scene: L.ball, reflect: true, key: null },
   { name: 'drones', scene: L.drones, reflect: true, key: 'drones' },
   { name: 'holo-billboards', scene: L.billboards, reflect: true, key: 'billboards' },
@@ -69,27 +81,17 @@ for (const l of layers) l.visible = true;
 
 const worldMaterials = [];
 for (const l of layers) l.scene.traverse((o) => { if (o.material && !worldMaterials.includes(o.material)) worldMaterials.push(o.material); });
+for (const mtl of courseView.materials) if (!worldMaterials.includes(mtl)) worldMaterials.push(mtl);
 
-// ---------------------------------------------------------------- HUD
-const hud = document.getElementById('hud');
-const hudScore = hud.querySelector('.score');
-const hudSpeed = hud.querySelector('.speed');
-const hudMsg = hud.querySelector('.msg');
-const hudBest = hud.querySelector('.best');
-// high score: persisted locally; a run only counts if it wasn't in no-death mode
-const BEST_KEY = 'tron-slope.best.v1';
-let best = 0;
-try { best = Number(localStorage.getItem(BEST_KEY)) || 0; } catch { /* private mode */ }
-let runBestFlagged = false;
+// ---------------------------------------------------------------- HUD + scores
+const hud = new Hud();
 const score = () => Math.floor(ball.dist / 4);
-function renderBest() { hudBest.textContent = best ? `best ${best}` : ''; }
-renderBest();
 
 // ---------------------------------------------------------------- overlay
 const overlay = new Overlay(settings, perf, { probe: (key) => startProbe(key) });
 
 // ---------------------------------------------------------------- sizing / dynamic resolution
-let dynScale = 1, dynCooldown = 0;
+let dynScale = 1, dynCooldown = 0, camRoll = 0;
 function internalSize() {
   const dpr = Math.min(devicePixelRatio || 1, S.maxDpr);
   const cw = innerWidth, ch = innerHeight;
@@ -142,50 +144,54 @@ function startProbe(key) {
 }
 
 // ---------------------------------------------------------------- game state
-let simTime = 0, deathT = -1, glitch = 0, shakeImpact = 0;
+// run → dying (slow-mo, shards, glitch) → summary (wait for input) → run
+let simTime = 0, deathT = -1, glitch = 0, shakeImpact = 0, phase = 'run';
 const STEP = 1 / 120;
 let acc = 0;
 const tmpV = new THREE.Vector3();
 const camPos = new THREE.Vector3(), camLook = new THREE.Vector3();
+const ctr = {};
 
-function resetRun() {
+function startRun(newSeed) {
+  if (newSeed !== undefined) seed = newSeed >>> 0;
+  history.replaceState(null, '', '#seed=' + seedToString(seed) + (course.minD ? '&d=' + course.minD : ''));
+  course.reset(seed);
   ball.reset();
-  obstacles.reset(0); city.reset(0); dys.reset(0);
+  ball.mesh.visible = true;
+  city.reset(0); dys.reset(0);
   pipeline.historyValid = false;
-  camPos.set(0, trackY(0) + 3.2, 8);
-  deathT = -1;
-  hudMsg.textContent = '';
-  hudMsg.classList.remove('newbest');
-  runBestFlagged = false;
+  camPos.set(0, ball.y + 2.6, 7.2);
+  deathT = -1; phase = 'run'; acc = 0;
+  hud.startRun(seedToString(seed));
 }
 
-function die() {
-  if (S.godMode) return;
+function die(cause) {
   if (deathT >= 0) return;
-  ball.dead = true;
-  deathT = 0; glitch = 1; shakeImpact = 1;
-  const sc = score();
-  if (sc > best) {
-    best = sc; renderBest();
-    try { localStorage.setItem(BEST_KEY, String(best)); } catch { /* quota */ }
-    hudMsg.textContent = `new best ${sc}`; hudMsg.classList.add('newbest');
-  } else hudMsg.textContent = 'crashed';
+  deathT = 0; glitch = 1; shakeImpact = 1; phase = 'dying';
+  ball.mesh.visible = false;
+  // shatter into grid shards
+  particles.shardColor.copy(shared.uNeon.value);
+  particles.emit('shard', ball.mesh.position, new THREE.Vector3(ball.vx || 0, 0, -ball.speed), 60);
+  hud.crash(score(), seedToString(seed), cause);
 }
 
 function stepSim(dt) {
-  ball.step(dt);
-  if (S.godMode && ball.falling) { ball.falling = false; ball.fallY = 0; ball.vy = 0; ball.x = Math.sign(ball.x) * 2.5; ball.dead = false; }
-  if (ball.dead && deathT < 0) die();
-  if (!ball.falling && obstacles.hit(ball.x, ball.z, BALL_R)) {
-    if (S.godMode) { /* pass through */ } else die();
-  }
+  ball.step(dt, S.godMode);
+  if (ball.dead && deathT < 0) die(ball.deathCause);
 }
+
+addEventListener('keydown', (e) => {
+  if (phase !== 'summary' || e.target.closest?.('#overlay, #summary input')) return;
+  if (['Space', 'ArrowLeft', 'ArrowRight', 'KeyA', 'KeyD', 'Enter'].includes(e.code)) { e.preventDefault(); startRun(); }
+  else if (e.code === 'KeyR') startRun(randomSeed());
+});
+hud.onSeedSubmit = (txt) => { const s = parseSeed(txt); if (s !== null) startRun(s); };
 
 // ---------------------------------------------------------------- main loop
 let last = performance.now();
 let fpsCapAcc = 0;
 resize();
-resetRun();
+startRun();
 
 function frame(now) {
   requestAnimationFrame(frame);
@@ -200,14 +206,18 @@ function frame(now) {
   const frameStart = performance.now();
   const rawDt = perf.frame(now) / 1000;
   const dt = Math.min(rawDt, 1 / 20);
-  const simDt = S.freezeTime ? 0 : dt;
+  // slow-mo for 0.4 s after death, frozen once the summary is up
+  const timeScale = phase === 'dying' && deathT < 0.4 ? 0.25 : 1;
+  const simDt = S.freezeTime ? 0 : dt * timeScale;
   simTime += simDt;
 
   // fixed-timestep physics
   acc += simDt;
-  while (acc >= STEP) { stepSim(STEP); acc -= STEP; }
+  while (acc >= STEP) { if (phase === 'run') stepSim(STEP); acc -= STEP; }
   ball.sync();
-  if (deathT >= 0) { deathT += dt; if (deathT > 1.3) resetRun(); }
+  course.fill(ball.z, 1);
+  courseView.update(course.clockAt(ball.z), ball.z);
+  if (deathT >= 0) { deathT += dt; if (deathT > 1.2 && phase === 'dying') { phase = 'summary'; hud.showSummary(); } }
   glitch = Math.max(0, glitch - dt * 0.9);
   shakeImpact = Math.max(0, shakeImpact - dt * 2.5);
 
@@ -240,7 +250,9 @@ function frame(now) {
 
   // camera: chase cam with FOV kick + shake
   const sp = ball.speedN;
-  const target = tmpV.set(ball.x * 0.6, ball.y + 2.6, ball.z + 7.2);
+  course.centreAt(ball.z, ctr);
+  const cxAhead = course.centreAt(ball.z - 14, {}).cx;
+  const target = tmpV.set(ball.x * 0.6 + ctr.cx * 0.4, ball.y + 2.6, ball.z + 7.2);
   camPos.lerp(target, 1 - Math.exp(-dt * 10));
   camPos.z = target.z; // never lag behind along the run
   camera.position.copy(camPos);
@@ -248,8 +260,11 @@ function frame(now) {
   if (S.shake) shake = S.shakeAmt * (sp * 0.02 + weather.lightningFlash * 0.03 * (S.lightning ? 1 : 0) + shakeImpact * 0.25);
   camera.position.x += (Math.sin(simTime * 37.1) + Math.sin(simTime * 23.3)) * shake;
   camera.position.y += (Math.sin(simTime * 41.7) + Math.sin(simTime * 19.9)) * shake;
-  camLook.set(ball.x * 0.85, ball.y - 0.6, ball.z - 14);
+  camLook.set(ball.x * 0.6 + cxAhead * 0.4, ball.y - 0.6, ball.z - 14);
   camera.lookAt(camLook);
+  // roll with the deck bank (max 12°)
+  camRoll += ((ball.grounded ? -ball.bank : 0) * 0.55 - camRoll) * (1 - Math.exp(-dt * 6));
+  camera.rotateZ(Math.max(-0.21, Math.min(0.21, camRoll)));
   camera.fov = 62 + (S.fovKick ? S.fovKickAmt * sp : 0);
   camera.updateProjectionMatrix();
   camera.updateMatrixWorld();
@@ -257,8 +272,8 @@ function frame(now) {
 
   // world systems
   track.update(ball.z, reactDist, S.showReaction);
+  { const g = course.centreAt(ball.z - reactDist, {}); track.boundary.position.set(g.cx, g.cy, ball.z - reactDist); }
   city.update(ball.z, S.cityDensity);
-  obstacles.update(ball.z, S.testObstacles);
   sky.update(camera, ball.z, wp.glow, wp.strobes, S.strobes);
   pool.begin();
   dys.update(simTime, simDt, ball.z, { drones: S.drones, billboards: S.billboards, cables: S.cables, power: wp.power, flicker: u.uFlicker.value, volumetric: S.volumetric }, pool);
@@ -274,9 +289,9 @@ function frame(now) {
     debris: wp.debris * (0.35 + wind.uniforms.uGust.value) * S.debrisDensity, embers: wp.embers * S.emberDensity, steam: 0.7,
   }, { rain: S.rain, dust: S.dustMotes, ash: S.ash, debris: S.debris, embers: S.embers, steam: S.steam }, S.particleCount, storm);
   // ball-driven splash / dust
-  if (!ball.dead && !ball.falling && simDt > 0) {
+  if (phase === 'run' && ball.grounded && simDt > 0) {
     const bp = tmpV.set(ball.x, ball.y - BALL_R * 0.8, ball.z + 0.4);
-    const vel = new THREE.Vector3(ball.vx, 0, -ball.speed);
+    const vel = new THREE.Vector3(ball.vu, 0, -ball.speed);
     if (S.splashes && wp.wet > 0.2 && puddleMaskCPU(ball.x, ball.z, u.uPuddle.value, wp.wet) > 0.4 && Math.random() < 0.9) particles.emit('splash', bp, vel, 4);
     if (S.ballDust && Math.random() < 0.25 + sp * 0.6) particles.emit(wp.wet > 0.45 ? 'splash' : 'dust', bp, vel, 1);
   }
@@ -287,7 +302,7 @@ function frame(now) {
   // TAA jitter, render
   pipeline.jitter(camera, S.aa === 'taa');
   const planeNormal = new THREE.Vector3(0, 1, -SLOPE_TAN).normalize();
-  const planePoint = new THREE.Vector3(0, trackY(ball.z), ball.z);
+  const planePoint = new THREE.Vector3(ball.x, ball.y - BALL_R, ball.z);
   perf.sync = S.syncTiming && !perf.ext;
   pipeline.render({
     camera, s: S, layers, particles, cones, dt, speedN: sp, glitch, ballPos: ball.mesh.position, wind,
@@ -309,15 +324,10 @@ function frame(now) {
   updateDynRes(dt);
 
   // HUD
-  const sc = score();
-  hudScore.textContent = sc;
-  // passing the old best mid-run lights the score up (no-death runs never count)
-  if (!S.godMode && best > 0 && sc > best && !runBestFlagged) { runBestFlagged = true; hudScore.classList.add('beating'); }
-  if (!runBestFlagged) hudScore.classList.remove('beating');
-  hudSpeed.textContent = (ball.speed * 3.6).toFixed(0) + ' km/h';
-  overlay.tick(now, { dynScale, size: pipeline.size, weather: weather.target, reactDist, timingMode: perf.timingMode });
+  hud.frame(score(), ball.speed, S.godMode);
+  overlay.tick(now, { dynScale, size: pipeline.size, weather: weather.target, reactDist, timingMode: perf.timingMode, course: course.stats, seed: seedToString(seed) });
 }
 requestAnimationFrame(frame);
 
 // expose for debugging / automated perf checks
-window.__tron = { settings, perf, pipeline, ball, weather, track, layers, camera, get dynScale() { return dynScale; } };
+window.__tron = { settings, perf, pipeline, ball, weather, track, layers, camera, course, hud, startRun, get phase() { return phase; }, get dynScale() { return dynScale; } };

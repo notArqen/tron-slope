@@ -183,7 +183,7 @@ export class Track {
 
 // ----------------------------------------------------------------------------------
 // Placeholder obstacles — generic blocks for readability/contrast testing only.
-const OBST_VS = /* glsl */`
+export const OBST_VS = /* glsl */`
 varying vec3 vWorld; varying vec3 vNormalW; varying vec3 vLocal; varying vec3 vScale;
 void main(){
   mat4 m = modelMatrix * instanceMatrix;
@@ -193,7 +193,7 @@ void main(){
   vWorld = wp.xyz; vNormalW = normalize(mat3(m) * normal);
   gl_Position = projectionMatrix * viewMatrix * wp;
 }`;
-const OBST_FS = /* glsl */`
+export const OBST_FS = /* glsl */`
 varying vec3 vWorld; varying vec3 vNormalW; varying vec3 vLocal; varying vec3 vScale;
 uniform float uRimMin;
 void main(){

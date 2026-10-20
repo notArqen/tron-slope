@@ -99,7 +99,7 @@ export class City {
         const i = this.idx(row, tier, side);
         const sgn = side ? 1 : -1;
         const w = 9 + Math.random() * 14, d = 8 + Math.random() * 12;
-        const gap = tier === 0 ? 6 + Math.random() * 10 : 0;
+        const gap = tier === 0 ? 11 + Math.random() * 8 : 0; // room for curved platforms (±7 m)
         const x = sgn * (TRACK_W / 2 + gap + w / 2 + tier * 26 + Math.random() * 8);
         const zz = z + (Math.random() - 0.5) * 8;
         const base = trackY(zz) - GROUND_OFFSET - 2;

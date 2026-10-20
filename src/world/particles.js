@@ -252,6 +252,7 @@ export class Particles {
     const scene = new THREE.Scene(); scene.add(mesh);
     this.cpu = { geo, mat, mesh, scene, list: [], enabled: true };
     this.tmp = new THREE.Vector3();
+    this.shardColor = new THREE.Color(0.2, 1, 0.3);
   }
 
   // amounts: { rain, dust, ash, debris, embers, steam } 0..1+, plus per-system enable + count scale
@@ -273,10 +274,11 @@ export class Particles {
   emit(kind, pos, vel, n) {
     for (let i = 0; i < n; i++) {
       if (this.cpu.list.length >= this.cpuMax) this.cpu.list.shift();
-      const spread = kind === 'splash' ? 3.5 : 1.6;
+      const spread = kind === 'splash' ? 3.5 : kind === 'shard' ? 7 : 1.6;
       this.cpu.list.push({ kind, p: pos.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.6, 0, (Math.random() - 0.5) * 0.6)),
-        v: new THREE.Vector3(vel.x * 0.2 + (Math.random() - 0.5) * spread, (kind === 'splash' ? 2.5 : 0.8) + Math.random() * 2.5, vel.z * 0.15 + (Math.random() - 0.5) * spread),
-        age: 0, life: kind === 'splash' ? 0.5 + Math.random() * 0.4 : 1.2 + Math.random() * 1.2, size: kind === 'splash' ? 0.04 + Math.random() * 0.05 : 0.25 + Math.random() * 0.3 });
+        v: new THREE.Vector3(vel.x * 0.2 + (Math.random() - 0.5) * spread, (kind === 'splash' ? 2.5 : kind === 'shard' ? 3 : 0.8) + Math.random() * 2.5, vel.z * (kind === 'shard' ? 0.35 : 0.15) + (Math.random() - 0.5) * spread),
+        age: 0, life: kind === 'splash' ? 0.5 + Math.random() * 0.4 : kind === 'shard' ? 1.0 + Math.random() * 0.8 : 1.2 + Math.random() * 1.2,
+        size: kind === 'splash' ? 0.04 + Math.random() * 0.05 : kind === 'shard' ? 0.07 + Math.random() * 0.09 : 0.25 + Math.random() * 0.3 });
     }
   }
 
@@ -286,19 +288,20 @@ export class Particles {
       const q = L[i]; q.age += dt;
       if (q.age > q.life) { L.splice(i, 1); continue; }
       wind.at(q.p, this.tmp);
-      const drag = q.kind === 'splash' ? 0.5 : 2.0;
+      const drag = q.kind === 'dust' ? 2.0 : 0.5;
       q.v.addScaledVector(this.tmp.sub(q.v), Math.min(1, drag * dt));
-      q.v.y -= (q.kind === 'splash' ? 14 : 0.6) * dt;
+      q.v.y -= (q.kind === 'dust' ? 0.6 : 14) * dt;
       q.p.addScaledVector(q.v, dt);
     }
     for (let i = 0; i < this.cpuMax; i++) {
       const q = L[i];
       if (!q) { this.cpuPos[i * 4 + 3] = 0; continue; }
       const k = q.age / q.life;
-      const grow = q.kind === 'splash' ? 1 : 1 + k * 3;
+      const grow = q.kind === 'dust' ? 1 + k * 3 : 1;
       this.cpuPos.set([q.p.x, q.p.y, q.p.z, q.size * grow], i * 4);
       const a = (1 - k) * (q.kind === 'splash' ? 0.9 : 0.25);
-      if (q.kind === 'splash') this.cpuCol.set([0.35 * a, 0.42 * a, 0.5 * a, a * 0.6], i * 4);
+      if (q.kind === 'shard') { const b = (1 - k) * 4; const c = this.shardColor; this.cpuCol.set([c.r * b, c.g * b, c.b * b, 0], i * 4); }
+      else if (q.kind === 'splash') this.cpuCol.set([0.35 * a, 0.42 * a, 0.5 * a, a * 0.6], i * 4);
       else this.cpuCol.set([0.22 * a, 0.18 * a, 0.14 * a, a], i * 4);
     }
     this.cpu.geo.attributes.aPos.needsUpdate = true;

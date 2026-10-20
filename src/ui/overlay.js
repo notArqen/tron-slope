@@ -6,7 +6,7 @@ import { SCHEMA, SECTIONS, BY_KEY } from '../settings/schema.js';
 const PROFILE_KEYS = ['ao', 'reflections', 'gi', 'fog', 'volumetric', 'godrays', 'haze', 'bloom', 'streaks', 'flare', 'halation', 'dirt', 'dof', 'ca',
   'distortion', 'vignette', 'grain', 'motionBlur', 'radialBlur', 'heatHaze', 'scanlines', 'dither', 'pixelate', 'cas', 'rain', 'dustMotes', 'ash',
   'debris', 'embers', 'steam', 'splashes', 'ballDust', 'lensDroplets', 'cables', 'drones', 'billboards', 'strobes', 'lightning', 'neonFlicker',
-  'surges', 'puddles', 'grime', 'testObstacles'];
+  'surges', 'puddles', 'grime'];
 
 export class Overlay {
   constructor(settings, perf, hooks) {
@@ -176,7 +176,7 @@ export class Overlay {
       const p = this.perf;
       this.fpsEl.textContent = p.fps ? p.fps.toFixed(0) : '--';
       this.msEl.textContent = p.avgMs ? `${p.avgMs.toFixed(1)} ms` : '';
-      this.resEl.textContent = `${info.size.w}×${info.size.h} → ${info.size.ow}×${info.size.oh} · dyn ${(info.dynScale * 100).toFixed(0)}% · reaction ${info.reactDist.toFixed(0)} m`;
+      this.resEl.textContent = `${info.size.w}×${info.size.h} → ${info.size.ow}×${info.size.oh} · dyn ${(info.dynScale * 100).toFixed(0)}% · reaction ${info.reactDist.toFixed(0)} m · seed ${info.seed} · chunks ${info.course.generated} (rejected ${info.course.rejected}, fallback ${info.course.fallbacks})`;
       this.modeEl.textContent = info.timingMode;
       this.renderCosts();
     }

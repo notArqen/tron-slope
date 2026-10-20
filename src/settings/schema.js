@@ -168,7 +168,6 @@ export const SCHEMA = [
   B('showReaction', 'Reaction boundary', 'Visualise the reaction-distance readability boundary.', 'Debug', false),
   R('reactionTime', 'Reaction time (s)', 'Seconds of travel that must stay readable through weather.', 'Debug', 1.0, 0.4, 2, 0.05),
   R('fogNearCap', 'Fog cap in reaction zone', 'Max fog opacity allowed inside the reaction distance.', 'Debug', 0.3, 0, 1, 0.05),
-  B('testObstacles', 'Test obstacles', 'Placeholder blocks for readability testing (not level design).', 'Debug', true),
   B('godMode', 'No death', 'Ignore falls and collisions.', 'Debug', false),
   B('syncTiming', 'Sync per-pass timing', 'Stall the GPU after each pass to time it when timer queries are missing.', 'Debug', false),
 ];
