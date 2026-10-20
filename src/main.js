@@ -11,10 +11,13 @@ import { Course } from './game/course.js';
 import { CourseView } from './game/courseView.js';
 import { seedToString, parseSeed, randomSeed } from './game/rng.js';
 import { Hud } from './ui/hud.js';
+import { Menu } from './ui/menu.js';
+import { Autopilot } from './game/autopilot.js';
 import { City } from './world/city.js';
 import { Sky } from './world/sky.js';
 import { Dystopia, LightPool, createVolumeUniforms } from './world/dystopia.js';
 import { Particles } from './world/particles.js';
+import { Floaters } from './world/floaters.js';
 import { Pipeline } from './post/pipeline.js';
 import { Overlay } from './ui/overlay.js';
 
@@ -41,7 +44,7 @@ const vol = createVolumeUniforms();
 const mkScene = () => new THREE.Scene();
 const L = {
   sky: mkScene(), track: mkScene(), city: mkScene(), skyline: mkScene(), drones: mkScene(), billboards: mkScene(),
-  cables: mkScene(), obstacles: mkScene(), ball: mkScene(), course: mkScene(),
+  cables: mkScene(), obstacles: mkScene(), ball: mkScene(), course: mkScene(), floaters: mkScene(),
 };
 const sky = new Sky(L.sky, shared);
 L.skyline.add(sky.skyline); L.sky.remove(sky.skyline);
@@ -50,6 +53,7 @@ L.track.remove(track.mesh); // the Phase 1 placeholder deck is replaced by the s
 const city = new City(L.city, shared);
 const dys = new Dystopia(mkScene(), shared, vol);
 L.drones.add(dys.drones); L.billboards.add(dys.billboards); L.cables.add(dys.cables);
+const floaters = new Floaters(L.floaters, shared);
 const course = new Course();
 const courseView = new CourseView(L.course, L.obstacles, shared, course);
 // seed: #seed=XXXXXXXX in the URL replays a run; otherwise random
@@ -76,6 +80,7 @@ const layers = [
   { name: 'drones', scene: L.drones, reflect: true, key: 'drones' },
   { name: 'holo-billboards', scene: L.billboards, reflect: true, key: 'billboards' },
   { name: 'cables', scene: L.cables, reflect: true, key: 'cables' },
+  { name: 'floating cubes', scene: L.floaters, reflect: true, key: 'floaters' },
 ];
 for (const l of layers) l.visible = true;
 
@@ -144,26 +149,53 @@ function startProbe(key) {
 }
 
 // ---------------------------------------------------------------- game state
-// run → dying (slow-mo, shards, glitch) → summary (wait for input) → run
-let simTime = 0, deathT = -1, glitch = 0, shakeImpact = 0, phase = 'run';
+// menu (attract demo) → run ⇄ paused → dying (slow-mo, shards, glitch) → summary → run | menu
+let simTime = 0, deathT = -1, glitch = 0, shakeImpact = 0, phase = 'menu';
 const STEP = 1 / 120;
 let acc = 0;
 const tmpV = new THREE.Vector3();
 const camPos = new THREE.Vector3(), camLook = new THREE.Vector3();
 const ctr = {};
+const autopilot = new Autopilot(shared, course);
+let playD = course.minD; // difficulty floor chosen for real runs
+let autoplay = false;     // Autoplay: the autopilot drives a real run (scores not counted)
 
-function startRun(newSeed) {
-  if (newSeed !== undefined) seed = newSeed >>> 0;
-  history.replaceState(null, '', '#seed=' + seedToString(seed) + (course.minD ? '&d=' + course.minD : ''));
+function startRun(newSeed, { attract = false } = {}) {
+  if (newSeed !== undefined && newSeed !== null) seed = newSeed >>> 0;
+  course.minD = attract ? 0.35 : playD;
+  if (!attract) history.replaceState(null, '', '#seed=' + seedToString(seed) + (course.minD ? '&d=' + course.minD : ''));
   course.reset(seed);
   ball.reset();
   ball.mesh.visible = true;
-  city.reset(0); dys.reset(0);
+  city.reset(0); dys.reset(0); floaters.reset(0);
   pipeline.historyValid = false;
   camPos.set(0, ball.y + 2.6, 7.2);
-  deathT = -1; phase = 'run'; acc = 0;
-  hud.startRun(seedToString(seed));
+  deathT = -1; acc = 0;
+  phase = attract ? 'menu' : 'run';
+  if (!attract) { menu.hideTitle(); menu.hidePause(); hud.startRun(seedToString(seed)); hud.setAutoplay(autoplay); autopilot.reset(); }
 }
+
+function setAutoplay(on) {
+  autoplay = on;
+  hud.setAutoplay(on);
+  if (on) autopilot.reset(); else ball.keys.clear();
+}
+
+function toMenu() {
+  autoplay = false;
+  menu.hidePause();
+  document.getElementById('summary').hidden = true;
+  history.replaceState(null, '', location.pathname);
+  startRun(randomSeed(), { attract: true });
+  menu.showTitle(hud.best);
+}
+
+function pause() {
+  if (phase !== 'run') return;
+  phase = 'paused'; ball.keys.clear();
+  menu.showPause(seedToString(seed), autoplay);
+}
+function resume() { if (phase === 'paused') { phase = 'run'; menu.hidePause(); } }
 
 function die(cause) {
   if (deathT >= 0) return;
@@ -176,22 +208,42 @@ function die(cause) {
 }
 
 function stepSim(dt) {
-  ball.step(dt, S.godMode);
+  if (phase === 'menu' || autoplay) autopilot.drive(ball); // attract demo / Autoplay
+  ball.step(dt, S.godMode || phase === 'menu');
   if (ball.dead && deathT < 0) die(ball.deathCause);
 }
 
-addEventListener('keydown', (e) => {
-  if (phase !== 'summary' || e.target.closest?.('#overlay, #summary input')) return;
-  if (['Space', 'ArrowLeft', 'ArrowRight', 'KeyA', 'KeyD', 'Enter'].includes(e.code)) { e.preventDefault(); startRun(); }
-  else if (e.code === 'KeyR') startRun(randomSeed());
+const menu = new Menu({
+  play: (seedText, d) => { autoplay = false; playD = d; const s = seedText ? parseSeed(seedText) : null; startRun(s ?? randomSeed()); },
+  autoplay: (d) => { autoplay = true; playD = d; startRun(randomSeed()); },
+  toggleAutoplay: () => { setAutoplay(!autoplay); menu.setAutoLabel(autoplay); },
+  settings: () => overlay.toggle(true),
+  resume, restart: () => startRun(seed), newSeed: () => startRun(randomSeed()), quit: toMenu,
 });
+
+const overlayOpen = () => !document.getElementById('overlay').hidden;
+addEventListener('keydown', (e) => {
+  if (e.defaultPrevented || overlayOpen() || e.target.closest?.('#overlay, #summary input, #menu input')) return;
+  if (phase === 'run' && (e.code === 'Escape' || e.code === 'KeyP')) { e.preventDefault(); pause(); return; }
+  if (phase === 'paused' && (e.code === 'Escape' || e.code === 'KeyP')) { e.preventDefault(); resume(); return; }
+  // Autoplay: steering keys take the wheel back
+  if (autoplay && phase === 'run' && ['ArrowLeft', 'ArrowRight', 'KeyA', 'KeyD'].includes(e.code)) { setAutoplay(false); return; }
+  if (phase !== 'summary') return;
+  if (['Space', 'Enter'].includes(e.code)) { e.preventDefault(); startRun(); }
+  else if (e.code === 'KeyR') startRun(randomSeed());
+  else if (e.code === 'KeyM' || e.code === 'Escape') toMenu();
+});
+// leaving the tab mid-run pauses it
+addEventListener('blur', () => pause());
+document.addEventListener('visibilitychange', () => { if (document.hidden) pause(); });
 hud.onSeedSubmit = (txt) => { const s = parseSeed(txt); if (s !== null) startRun(s); };
 
 // ---------------------------------------------------------------- main loop
 let last = performance.now();
 let fpsCapAcc = 0;
 resize();
-startRun();
+// a #seed=… link replays that run directly; otherwise start at the title screen
+if (hashSeed) { menu.hideTitle(); startRun(seed); } else toMenu();
 
 function frame(now) {
   requestAnimationFrame(frame);
@@ -207,17 +259,22 @@ function frame(now) {
   const rawDt = perf.frame(now) / 1000;
   const dt = Math.min(rawDt, 1 / 20);
   // slow-mo for 0.4 s after death, frozen once the summary is up
-  const timeScale = phase === 'dying' && deathT < 0.4 ? 0.25 : 1;
+  const timeScale = phase === 'paused' ? 0 : phase === 'dying' && deathT < 0.4 ? 0.25 : 1;
   const simDt = S.freezeTime ? 0 : dt * timeScale;
   simTime += simDt;
 
   // fixed-timestep physics
   acc += simDt;
-  while (acc >= STEP) { if (phase === 'run') stepSim(STEP); acc -= STEP; }
+  if ((phase === 'run' && autoplay) || phase === 'menu') autopilot.think(ball, simDt);
+  while (acc >= STEP) { if (phase === 'run' || phase === 'menu') stepSim(STEP); acc -= STEP; }
   ball.sync();
   course.fill(ball.z, 1);
   courseView.update(course.clockAt(ball.z), ball.z);
-  if (deathT >= 0) { deathT += dt; if (deathT > 1.2 && phase === 'dying') { phase = 'summary'; hud.showSummary(); } }
+  if (deathT >= 0) {
+    deathT += dt;
+    if (deathT > 1.2 && phase === 'dying') { phase = 'summary'; hud.showSummary(); }
+    if (autoplay && phase === 'summary' && deathT > 3.2) startRun(randomSeed()); // ambience: keep rolling
+  }
   glitch = Math.max(0, glitch - dt * 0.9);
   shakeImpact = Math.max(0, shakeImpact - dt * 2.5);
 
@@ -274,6 +331,7 @@ function frame(now) {
   track.update(ball.z, reactDist, S.showReaction);
   { const g = course.centreAt(ball.z - reactDist, {}); track.boundary.position.set(g.cx, g.cy, ball.z - reactDist); }
   city.update(ball.z, S.cityDensity);
+  floaters.update(ball.z, S.floaters);
   sky.update(camera, ball.z, wp.glow, wp.strobes, S.strobes);
   pool.begin();
   dys.update(simTime, simDt, ball.z, { drones: S.drones, billboards: S.billboards, cables: S.cables, power: wp.power, flicker: u.uFlicker.value, volumetric: S.volumetric }, pool);
@@ -289,7 +347,7 @@ function frame(now) {
     debris: wp.debris * (0.35 + wind.uniforms.uGust.value) * S.debrisDensity, embers: wp.embers * S.emberDensity, steam: 0.7,
   }, { rain: S.rain, dust: S.dustMotes, ash: S.ash, debris: S.debris, embers: S.embers, steam: S.steam }, S.particleCount, storm);
   // ball-driven splash / dust
-  if (phase === 'run' && ball.grounded && simDt > 0) {
+  if ((phase === 'run' || phase === 'menu') && ball.grounded && simDt > 0) {
     const bp = tmpV.set(ball.x, ball.y - BALL_R * 0.8, ball.z + 0.4);
     const vel = new THREE.Vector3(ball.vu, 0, -ball.speed);
     if (S.splashes && wp.wet > 0.2 && puddleMaskCPU(ball.x, ball.z, u.uPuddle.value, wp.wet) > 0.4 && Math.random() < 0.9) particles.emit('splash', bp, vel, 4);
@@ -330,4 +388,4 @@ function frame(now) {
 requestAnimationFrame(frame);
 
 // expose for debugging / automated perf checks
-window.__tron = { settings, perf, pipeline, ball, weather, track, layers, camera, course, hud, startRun, get phase() { return phase; }, get dynScale() { return dynScale; } };
+window.__tron = { settings, perf, pipeline, ball, weather, track, layers, camera, course, hud, menu, startRun, toMenu, pause, resume, get phase() { return phase; }, get dynScale() { return dynScale; } };

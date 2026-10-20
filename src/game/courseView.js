@@ -44,14 +44,15 @@ void main(){
     float lat = gridLine(s, 2.4, 0.05);
     float lon = gridLine(u + hw, max(hw * 2.0 / 6.0, 0.55), 0.04);
     vec2 cell = vec2(floor((u + hw) / max(hw / 3.0, 0.5)), floor(s / 2.4));
-    float live = neonLive(floor(cell / vec2(1.0, 6.0)) + floor(p.z * 0.01), t);
+    // the deck is read at speed: dead sections only dim here, they never go dark
+    float live = mix(0.6, 1.0, neonLive(floor(cell / vec2(1.0, 6.0)) + floor(p.z * 0.01), t));
     float surge = uSurge * surgePulse(p.z, t, hash11(cell.x) * 3.0);
     float edge = 1.0 - smoothstep(0.08, 0.2, hw - abs(u));
     float endEdge = 1.0 - smoothstep(0.1, 0.35, dOpen);
     float lines = max(lat, lon);
     float grime = uGrime * fbm2(p.xz * vec2(0.6, 0.15));
     float crack = uGrime * (1.0 - smoothstep(0.0, 0.018, abs(fbm2(p.xz * 0.9 + 5.0) - 0.5))) * step(0.55, hash12(floor(p.xz * 0.08)));
-    lines *= (1.0 - crack * 0.9) * (1.0 - grime * 0.35);
+    lines *= (1.0 - crack * 0.4) * (1.0 - grime * 0.25);
     vec3 base = vec3(0.012, 0.014, 0.016) * (1.0 - grime * 0.6) + vec3(0.02) * crack;
     float pud = puddleMask(p.xz) * step(1.6, hw);
     if (pud > 0.0) {
@@ -61,11 +62,11 @@ void main(){
       float r = length(f - c); float ring = sin((r - ph * 0.5) * 60.0) * (1.0 - ph) * smoothstep(0.5 * ph + 0.06, 0.5 * ph, r);
       vec2 dir = normalize(f - c + 1e-4);
       nOut = normalize(n + vec3(dir.x, 0.0, dir.y) * ring * 0.25 * uRain * pud);
-      base *= mix(1.0, 0.35, pud); refl = mix(refl, 0.95, pud); lines *= mix(1.0, 0.45, pud);
+      base *= mix(1.0, 0.6, pud); refl = mix(refl, 0.9, pud); lines *= mix(1.0, 0.8, pud);
     }
     vec3 lit = base * (0.25 + poolLight(p, n) * 1.5) + base * uLightning * 4.0;
     float blob = ballBlob(p);
-    col = lit * blob + neon * lines * (2.2 * live + surge * 6.0) * mix(0.4, 1.0, uPower) * blob;
+    col = lit * blob + neon * lines * (2.2 * live + surge * 6.0) * mix(0.6, 1.0, uPower) * mix(0.6, 1.0, blob);
     col += neon * max(edge, endEdge) * 3.0 * edgeBoost;
     emis = max(lines * live, max(edge, endEdge));
   }
@@ -123,11 +124,14 @@ function deckIndex(n) {
   }
   return idx;
 }
+// octagonal tunnel section (the deck is the floor face); 7 faces × 2 verts per ring
+const OCT = (hw) => { const c = 1.7; return [[-hw, 0], [-hw - c, c], [-hw - c, TUBE_H - c], [-hw, TUBE_H], [hw, TUBE_H], [hw + c, TUBE_H - c], [hw + c, c], [hw, 0]]; };
+const TUBE_VERTS = 14;
 function tubeIndex(n) {
   const idx = [];
   for (let i = 0; i < n - 1; i++) {
-    for (let f = 0; f < 3; f++) {
-      const a = i * 6 + f * 2, b = (i + 1) * 6 + f * 2;
+    for (let f = 0; f < 7; f++) {
+      const a = i * TUBE_VERTS + f * 2, b = (i + 1) * TUBE_VERTS + f * 2;
       idx.push(a, b, a + 1, a + 1, b, b + 1);
     }
   }
@@ -162,7 +166,7 @@ export class CourseView {
     if (!pm) {
       pm = kind === 'deck'
         ? new PooledMesh(this.deckMat, 6, deckIndex, { position: 3, normal: 3, aDeck: 4, aSide: 1, aRot: 4, aPivot: 2 })
-        : new PooledMesh(this.tubeMat, 6, tubeIndex, { position: 3, normal: 3, aTube: 2, aRot: 4, aPivot: 2 });
+        : new PooledMesh(this.tubeMat, TUBE_VERTS, tubeIndex, { position: 3, normal: 3, aTube: 2, aRot: 4, aPivot: 2 });
       pm.kind = kind;
     }
     this.scene.add(pm.mesh);
@@ -216,15 +220,22 @@ export class CourseView {
     const n = Math.min(pl.n, MAX_SAMPLES), rot = pl.rot;
     for (let i = 0; i < n; i++) {
       const z = pl.z0 - i * DZ, cx = pl.cx[i], cy = pl.cy[i], hw = pl.hw[i] + 0.02;
-      const v = i * 6, sAlong = i * DZ;
-      // left wall (up), ceiling (left→right), right wall (down); per-face normals point inward
-      const pts = [[-hw, 0, 1, 0, 0], [-hw, TUBE_H, 1, 0, TUBE_H], [-hw, TUBE_H, 0, -1, TUBE_H], [hw, TUBE_H, 0, -1, TUBE_H + 2 * hw], [hw, TUBE_H, -1, 0, TUBE_H + 2 * hw], [hw, 0, -1, 0, 2 * TUBE_H + 2 * hw]];
-      pts.forEach(([x, y, nx, ny, per], k) => {
-        A.position.setXYZ(v + k, cx + x, cy + y, z); A.normal.setXYZ(v + k, nx, ny, 0);
-        A.aTube.setXY(v + k, per, sAlong);
-        if (rot) { A.aRot.setXYZW(v + k, rot.amp, rot.omega, rot.phase, 0); A.aPivot.setXY(v + k, cx, cy + pl.pivot); }
-        else A.aRot.setXYZW(v + k, 0, 0, 0, 0);
-      });
+      const v = i * TUBE_VERTS, sAlong = i * DZ;
+      const pts = OCT(hw);
+      let per = 0;
+      for (let f = 0; f < 7; f++) {
+        const [x0, y0] = pts[f], [x1, y1] = pts[f + 1];
+        const ex = x1 - x0, ey = y1 - y0, L = Math.hypot(ex, ey);
+        const nx = -ey / L, ny = ex / L; // inward normal (points wind clockwise around the inside)
+        for (const [k, x, y, p] of [[0, x0, y0, per], [1, x1, y1, per + L]]) {
+          const vi = v + f * 2 + k;
+          A.position.setXYZ(vi, cx + x, cy + y, z); A.normal.setXYZ(vi, nx, ny, 0);
+          A.aTube.setXY(vi, p, sAlong);
+          if (rot) { A.aRot.setXYZW(vi, rot.amp, rot.omega, rot.phase, 0); A.aPivot.setXY(vi, cx, cy + pl.pivot); }
+          else A.aRot.setXYZW(vi, 0, 0, 0, 0);
+        }
+        per += L;
+      }
     }
     pm.commit(n);
     return pm;

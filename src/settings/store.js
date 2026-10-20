@@ -10,7 +10,15 @@ export class Settings {
     this.listeners = new Set();
     try {
       const raw = localStorage.getItem(LS_KEY);
-      if (raw) this.assign(JSON.parse(raw), false);
+      if (raw) {
+        const saved = JSON.parse(raw);
+        // defaults that changed since a save was made: move values still sitting on the
+        // old default to the new one; anything the player changed themselves is kept
+        if ((saved._v || 1) < 2) {
+          for (const [k, oldDef] of Object.entries({ mbStrength: 0.6, radialStrength: 0.5, caStrength: 0.35 })) if (saved[k] === oldDef) delete saved[k];
+        }
+        this.assign(saved, false);
+      }
     } catch { /* private mode / corrupt — fall back to defaults */ }
   }
 
@@ -66,11 +74,11 @@ export class Settings {
     if (emit) { for (const k of Object.keys(this.values)) this.emit(k); this.save(); }
   }
 
-  exportJSON() { return JSON.stringify(this.values, null, 2); }
+  exportJSON() { return JSON.stringify({ ...this.values, _v: 2 }, null, 2); }
 
   save() {
     clearTimeout(this._saveT);
-    this._saveT = setTimeout(() => { try { localStorage.setItem(LS_KEY, JSON.stringify(this.values)); } catch { /* quota */ } }, 150);
+    this._saveT = setTimeout(() => { try { localStorage.setItem(LS_KEY, JSON.stringify({ ...this.values, _v: 2 })); } catch { /* quota */ } }, 150);
   }
 
   on(fn) { this.listeners.add(fn); return () => this.listeners.delete(fn); }

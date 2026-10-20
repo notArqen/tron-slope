@@ -286,8 +286,9 @@ void main(){
 
 // ---------------------------------------------------------------- DOF (half-res gather + composite)
 const COC = /* glsl */`
-uniform float uFocus; uniform float uAperture; uniform float uMaxBlur;
-float cocAt(vec2 uv){ float z = -viewPos(uv).z; return clamp(uAperture * (z - uFocus) / max(z, 0.1) * 0.7, -1.0, 1.0); }
+uniform float uFocus; uniform float uAperture; uniform float uMaxBlur; uniform float uDofStart;
+// far-field only: nothing nearer than uDofStart blurs, so the track you read stays sharp
+float cocAt(vec2 uv){ float z = -viewPos(uv).z; return clamp(uAperture * smoothstep(uDofStart, uDofStart * 2.5, z), 0.0, 1.0); }
 `;
 export const DOF_PREP_FS = HEAD + DEPTH + COC + /* glsl */`
 uniform sampler2D tColor;

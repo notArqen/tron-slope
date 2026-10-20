@@ -14,8 +14,33 @@
       <div class="msg"></div>
       <div class="seed"></div>
       <div class="speed"></div>
-      <div class="hint">← → / A D steer · ` settings</div>
+      <div class="hint">← → / A D steer · esc pause · ` settings</div>
+      <div class="auto" hidden>AUTOPLAY · press ← → to take over</div>
     </div>
+    <section id="menu" class="first" hidden aria-label="Main menu">
+      <h1 class="m-title">TRON<i></i>SLOPE</h1>
+      <p class="m-tag">All downhill from here.</p>
+      <p class="m-desc">An endless neon slope through a city in the rain. Steer. It only gets faster.</p>
+      <div class="m-actions">
+        <button class="m-play" data-act="play">Play</button>
+        <button class="m-ghost" data-act="autoplay">Autoplay</button>
+        <div class="m-level" role="radiogroup" aria-label="Start difficulty"></div>
+        <form class="m-seed"><input placeholder="seed (optional)" spellcheck="false" autocomplete="off" maxlength="32" aria-label="Seed" /><button type="submit">Go</button></form>
+        <button class="m-ghost" data-act="settings">Settings</button>
+      </div>
+      <div class="m-best"></div>
+      <div class="m-keys"><kbd>←</kbd><kbd>→</kbd> steer · <kbd>esc</kbd> pause · <kbd>`</kbd> settings</div>
+    </section>
+    <section id="pause" hidden aria-label="Paused">
+      <div class="p-title">PAUSED</div>
+      <div class="p-seed"></div>
+      <button data-act="resume">Resume</button>
+      <button data-act="restart">Restart run</button>
+      <button data-act="newSeed">New seed</button>
+      <button data-act="toggleAutoplay" class="p-auto">Autoplay: off</button>
+      <button data-act="settings">Settings</button>
+      <button data-act="quit">Main menu</button>
+    </section>
     <section id="summary" hidden>
       <div class="s-score"></div>
       <div class="s-stats"></div>
@@ -24,7 +49,7 @@
         <input id="seed-in" spellcheck="false" autocomplete="off" maxlength="32" />
         <button type="submit">play</button>
       </form>
-      <div class="s-keys"><kbd>space</kbd> / <kbd>←</kbd><kbd>→</kbd> retry this seed · <kbd>R</kbd> new seed</div>
+      <div class="s-keys"><kbd>space</kbd> retry this seed · <kbd>R</kbd> new seed · <kbd>M</kbd> menu</div>
     </section>
     <script type="module" src="/src/main.js"></script>
   </body>

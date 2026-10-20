@@ -12,7 +12,8 @@ export const G = 28;               // gameplay gravity (m/s²)
 export const BALL_R = 0.55;
 export const STEER_ACC = 46, STEER_DAMP = 6.5;
 export const V_MIN = 14, V_MAX = 62, K_ACC = 4.8;
-export const CENTRIFUGAL = 0.2;   // fraction of v²κ felt on curves (the ball mostly follows the deck heading)
+export const CENTRIFUGAL = 0.1;   // fraction of v²κ felt on curves (the ball mostly follows the deck heading)
+export const KAPPA_MAX = 1 / 25;  // tightest bend the generator builds; clamps finite-difference spikes at joins
 const TAN_STEEP = Math.tan((14 * Math.PI) / 180);
 const TAN_FLAT = Math.tan((7 * Math.PI) / 180);
 const TAN_RECOVER = Math.tan((7.5 * Math.PI) / 180);
@@ -57,7 +58,7 @@ class Platform {
   // heading dcx/ds and curvature d²cx/ds² (s = forward distance) at z
   bend(z, out) {
     const a = this.sample(z + 1, {}).cx, b = this.sample(z, {}).cx, c = this.sample(z - 1, {}).cx;
-    out.dcx = (c - a) / 2; out.kappa = c - 2 * b + a;
+    out.dcx = (c - a) / 2; out.kappa = Math.max(-KAPPA_MAX, Math.min(KAPPA_MAX, c - 2 * b + a));
     return out;
   }
   // deck centre height at z, extrapolated past the ends (entry slope behind, own slope ahead)
@@ -158,6 +159,7 @@ const TYPES = [
   { id: 'banked', d: 0.1, w: 2 }, { id: 'steep', d: 0.1, w: 1.5 },
   { id: 'gap', d: 0.2, w: 2.5 }, { id: 'tunnel', d: 0.3, w: 1.6 },
   { id: 'thin', d: 0.45, w: 2 }, { id: 'split', d: 0.45, w: 1.4 },
+  { id: 'winding', d: 0.25, w: 3 },
   { id: 'rottunnel', d: 0.75, w: 1.2 },
 ];
 const OBSTACLES = [
@@ -227,7 +229,14 @@ export class Course {
     this.stats.fallbacks++;
     const snap = this.snapshot();
     const chunk = this.build('straight', { breather: true, len: 50, wide: true });
-    this.cur.R = this.validate(chunk, snap.R) || snap.R;
+    let R = this.validate(chunk, snap.R);
+    if (!R) {
+      // the fallback is a wide straight: assume the player is somewhere on its exit deck
+      R = new Uint8Array(GN); const pl = chunk.platforms[chunk.platforms.length - 1], s = pl.sample(pl.z1, {});
+      for (let i = 0; i < GN; i++) { const x = GX0 + i * GDX; if (Math.abs(x - s.cx) <= s.hw - MARGIN) R[i] = 1; }
+      chunk.exitHead = 0;
+    }
+    this.cur.R = R;
     this.commit(chunk, 'breather');
   }
 
@@ -238,6 +247,7 @@ export class Course {
     const c = this.cur;
     c.hist.push(type === 'breather' ? 'straight' : type); if (c.hist.length > 4) c.hist.shift();
     if (type === 'breather') { c.sinceBreather = 0; c.nextBreather = this.rng.int(4, 6); } else c.sinceBreather++;
+    this.cur.head = chunk.exitHead || 0;
     this.addChunk(chunk);
     this.stats.generated++;
   }
@@ -344,8 +354,35 @@ export class Course {
         const p = new Platform('thin', c.z); chunk.platforms.push(p);
         this.run(chunk, p, len, (k, dist, L) => ({
           hw: lerp(w0, hw1, smooth(dist / 6)),
-          cx: cx0 + (sCurve ? Aa * Math.sin(2 * Math.PI * k) : Aa * (1 - Math.cos(Math.PI * k)) / 2),
+          // eased so the section starts and ends pointing straight down the slope
+          // (an angled join is a kink, and a kink reads as a huge sideways shove)
+          cx: cx0 + (sCurve ? Aa * Math.sin(2 * Math.PI * k) * smooth(k * 5) * smooth((1 - k) * 5) : Aa * (1 - Math.cos(Math.PI * k)) / 2),
         }));
+        break;
+      }
+      case 'winding': {
+        // owner request (SPEC amendment A1): long sweeping S-bends that also roll up and
+        // down. Rolls crest hard enough at speed to throw the ball into short hops.
+        const len = r.range(120, 220), cycles = r() < 0.5 ? 1 : 2, lam = len / cycles;
+        const Amax = Math.min(9, (lam * lam) / (25 * 4 * Math.PI * Math.PI)); // min radius 25 m
+        const A = r.sign() * r.range(0.5, 1) * Amax, w0 = c.hw, hw1 = lerp(2.5, 1.5, d) * r.range(0.9, 1.1);
+        // vertical rolls twice per lateral cycle, phased so every crest sits on an
+        // inflection of the bend: the ball only hops where the track runs straight
+        // roll height sized to the predicted speed: crest curvature ≈ 1.5·G/v² gives a
+        // short consistent hop (~0.2–0.3 s) instead of a long flight off a bending track
+        const vc = 2 * cycles, kv = (2 * Math.PI * vc) / len;
+        const H = Math.min(3, (r.range(1.3, 1.7) * G) / (c.v * c.v) / (kv * kv)), cx0 = c.cx;
+        const p = deck();
+        this.run(chunk, p, len, (k, dist, L) => {
+          const env = smooth(k * 6) * smooth((1 - k) * 6);
+          return {
+            hw: lerp(w0, hw1, smooth(dist / 10)),
+            cx: cx0 + A * Math.sin(2 * Math.PI * cycles * k) * env,
+            slope: this.baseSlope() + H * (2 * Math.PI * vc / L) * Math.sin(2 * Math.PI * vc * k) * env, // h = H·cos → crests at bend inflections
+          };
+        });
+        if (d >= 0.55) this.placeObstacles(chunk, p, d, ['block'], 1.6);
+        this.run(chunk, p, 18, () => ({})); // flat run-out: land before the next section
         break;
       }
       case 'split': {
@@ -494,18 +531,31 @@ export class Course {
     let R = Uint8Array.from(entry), N = new Uint8Array(GN);
     const trace = this.keepTrace ? [] : null; // debug: per-step reachable sets for the oracle test
     const s = {}, boxes = this._boxes;
-    let wasAir = false, prevCx = null, Lacc = 0, Hacc = 0;
+    let wasAir = false, prevCx = null, Lacc = 0, Hacc = 0, head = this.cur.head || 0, airAcc = 0;
     const bd = {};
     for (let k = 1; k < chunk.steps.length; k++) {
       const st = chunk.steps[k];
-      if (st.air) { wasAir = true; prevCx = null; Lacc = Hacc = 0; if (trace) trace.push({ z: st.z, air: true }); continue; }
+      if (st.air) {
+        // in flight the ball keeps its take-off heading: drift the whole set with it
+        wasAir = true; prevCx = null; Lacc = Hacc = 0;
+        airAcc += (head * DZ) / GDX;
+        const sh = Math.trunc(airAcc);
+        if (sh) {
+          airAcc -= sh; N.fill(0);
+          for (let i = 0; i < GN; i++) if (R[i]) { const j = i + sh; if (j >= 0 && j < GN) N[j] = 1; }
+          [R, N] = [N, R];
+        }
+        if (trace) trace.push({ z: st.z, air: true, sh });
+        continue;
+      }
+      airAcc = 0;
       // lateral dynamics for this step: ghosts follow the deck heading, feel partial
       // centrifugal + bank pull, and can steer at 70% of terminal lateral speed
       let pl0 = null;
       for (const pl of chunk.platforms) if (st.z <= pl.z0 + 1e-6 && st.z >= pl.z1 - 1e-6) { pl0 = pl; break; }
       let lo = 0, hi = 0;
       if (pl0 && !wasAir) {
-        pl0.sample(st.z, s); pl0.bend(st.z, bd);
+        pl0.sample(st.z, s); pl0.bend(st.z, bd); head = bd.dcx;
         const th = s.bank + pl0.rollAt(st.t);
         const a = -CENTRIFUGAL * st.v * st.v * bd.kappa - G * Math.sin(th);
         const dt = DZ / st.v;
@@ -565,6 +615,7 @@ export class Course {
       [R, N] = [N, R];
     }
     if (trace) chunk.trace = trace;
+    chunk.exitHead = head;
     return R;
   }
 

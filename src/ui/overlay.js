@@ -5,7 +5,7 @@ import { SCHEMA, SECTIONS, BY_KEY } from '../settings/schema.js';
 // while open — so it costs ~nothing when closed and very little when open.
 const PROFILE_KEYS = ['ao', 'reflections', 'gi', 'fog', 'volumetric', 'godrays', 'haze', 'bloom', 'streaks', 'flare', 'halation', 'dirt', 'dof', 'ca',
   'distortion', 'vignette', 'grain', 'motionBlur', 'radialBlur', 'heatHaze', 'scanlines', 'dither', 'pixelate', 'cas', 'rain', 'dustMotes', 'ash',
-  'debris', 'embers', 'steam', 'splashes', 'ballDust', 'lensDroplets', 'cables', 'drones', 'billboards', 'strobes', 'lightning', 'neonFlicker',
+  'debris', 'embers', 'steam', 'splashes', 'ballDust', 'lensDroplets', 'cables', 'floaters', 'drones', 'billboards', 'strobes', 'lightning', 'neonFlicker',
   'surges', 'puddles', 'grime'];
 
 export class Overlay {
@@ -17,7 +17,7 @@ export class Overlay {
     settings.on((k) => this.sync(k));
     addEventListener('keydown', (e) => {
       if (e.code === 'Backquote' || e.key === '`' || e.key === '~') { e.preventDefault(); this.toggle(); }
-      else if (e.code === 'Escape' && this.open) { this.toggle(false); }
+      else if (e.code === 'Escape' && this.open) { e.preventDefault(); this.toggle(false); }
     });
     perf.onProbeDone = (key) => { this.flash(`${BY_KEY[key]?.label || key}: ${fmt(perf.probeResults.get(key).ms)} ms`); this.nextProfile(); };
     this._lastGraph = 0; this._lastStats = 0;

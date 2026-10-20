@@ -133,7 +133,10 @@ export class Ball {
       const srf = C.surfaceAt(this.x, this.z, C.clockAt(this.z), this.y, this.srf);
       if (srf && this.y - BALL_R <= srf.y + 0.05 && py - BALL_R >= srf.y - 0.6) {
         this.grounded = true; this.pl = srf.pl; this.u = srf.u;
-        this.vu = this.vx * Math.cos(srf.theta); this.vy = 0;
+        // world lateral velocity → deck-relative: remove the deck's own heading, or every
+        // hop on a curve would add speed·heading to the sideways speed and fling the ball off
+        srf.pl.bend(this.z, this.bd);
+        this.vu = (this.vx - this.speed * this.bd.dcx) * Math.cos(srf.theta); this.vy = 0;
         this.y = srf.y + BALL_R;
       } else {
         const floor = C.centreAt(this.z, this.ctr).cy - 9;

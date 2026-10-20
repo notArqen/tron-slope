@@ -22,6 +22,7 @@ export class Hud {
     this.speedEl = hud.querySelector('.speed');
     this.seedEl = hud.querySelector('.seed');
     this.msgEl = hud.querySelector('.msg');
+    this.autoEl = hud.querySelector('.auto');
     this.sum = document.getElementById('summary');
     this.sumScore = this.sum.querySelector('.s-score');
     this.sumStats = this.sum.querySelector('.s-stats');
@@ -40,6 +41,9 @@ export class Hud {
     this.seedEl.textContent = `seed ${seedStr}`;
     this.renderBest();
   }
+
+  // Autoplay runs never count toward bests
+  setAutoplay(on) { this.autoEl.hidden = !on; if (on) this.tainted = true; }
 
   renderBest() {
     const sb = this.bySeed[this.seedStr] || 0;
@@ -73,7 +77,7 @@ export class Hud {
     this.msgEl.textContent = '';
     this.sumScore.innerHTML = String(l.score).split('').map(digitSVG).join('');
     const sb = this.bySeed[this.seedStr] || 0;
-    this.sumStats.innerHTML = `<span>best <b>${this.best}</b>${l.newBest ? ' <i>new</i>' : ''}</span><span>this seed <b>${sb}</b>${l.newSeedBest && !l.newBest ? ' <i>new</i>' : ''}</span>${this.tainted ? '<span class="dim">no-death run · not counted</span>' : ''}`;
+    this.sumStats.innerHTML = `<span>best <b>${this.best}</b>${l.newBest ? ' <i>new</i>' : ''}</span><span>this seed <b>${sb}</b>${l.newSeedBest && !l.newBest ? ' <i>new</i>' : ''}</span>${this.tainted ? '<span class="dim">autoplay / no-death run · not counted</span>' : ''}`;
     this.sumSeed.value = this.seedStr;
     this.sum.hidden = false;
   }

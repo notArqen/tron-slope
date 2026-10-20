@@ -103,6 +103,7 @@ export const SCHEMA = [
   R('emberDensity', 'Ember density', 'Spark count multiplier.', 'Weather', 1, 0, 2, 0.05),
   B('ballDust', 'Ball dust', 'Dust and spray kicked up behind the ball.', 'Weather', true),
   B('cables', 'Hanging cables', 'Catenary cables swaying in the wind.', 'Weather', true),
+  B('floaters', 'Floating cubes', 'Tumbling wireframe cubes drifting beside the track.', 'Weather', true),
   B('drones', 'Drones', 'Patrol drones with volumetric searchlights.', 'Weather', true),
   B('billboards', 'Holo-billboards', 'Glitching abstract-glyph billboards.', 'Weather', true),
   B('strobes', 'Distant strobes', 'Red/blue strobes on far towers.', 'Weather', true),
@@ -112,10 +113,11 @@ export const SCHEMA = [
 
   // ---------------------------------------------------------------- Lens
   B('dof', 'Depth of field', 'Bokeh DOF focused on the ball.', 'Lens', true),
-  R('dofAperture', 'Aperture', 'Blur amount away from the focus plane.', 'Lens', 0.5, 0, 2, 0.05),
+  R('dofStart', 'Blur starts at (m)', 'Everything nearer than this stays sharp (keeps the track readable).', 'Lens', 120, 10, 400, 5),
+  R('dofAperture', 'Aperture', 'How quickly things blur past the start distance.', 'Lens', 0.5, 0, 2, 0.05),
   R('dofMaxBlur', 'Max bokeh size', 'Largest bokeh radius in pixels (at 1080p).', 'Lens', 10, 2, 24, 1),
   B('ca', 'Chromatic aberration', 'Radial RGB split toward the edges.', 'Lens', true),
-  R('caStrength', 'CA strength', 'Size of the colour split.', 'Lens', 0.35, 0, 2, 0.05),
+  R('caStrength', 'CA strength', 'Size of the colour split.', 'Lens', 0.2, 0, 2, 0.05),
   B('distortion', 'Lens distortion', 'Barrel distortion.', 'Lens', true),
   R('distortionAmt', 'Distortion amount', 'Positive = barrel, negative = pincushion.', 'Lens', 0.06, -0.3, 0.3, 0.01),
   B('vignette', 'Vignette', 'Darkened corners.', 'Lens', true),
@@ -125,9 +127,9 @@ export const SCHEMA = [
 
   // ---------------------------------------------------------------- Motion
   B('motionBlur', 'Motion blur', 'Per-pixel camera motion blur scaled by speed.', 'Motion', true),
-  R('mbStrength', 'Motion blur strength', 'Shutter fraction.', 'Motion', 0.6, 0, 2, 0.05),
+  R('mbStrength', 'Motion blur strength', 'Shutter fraction.', 'Motion', 0.3, 0, 2, 0.05),
   B('radialBlur', 'Radial speed blur', 'Zoom blur toward the vanishing point at speed.', 'Motion', true),
-  R('radialStrength', 'Radial strength', 'Zoom blur amount at top speed.', 'Motion', 0.5, 0, 2, 0.05),
+  R('radialStrength', 'Radial strength', 'Zoom blur amount at top speed.', 'Motion', 0.25, 0, 2, 0.05),
   B('fovKick', 'FOV kick', 'Field of view widens with speed.', 'Motion', true),
   R('fovKickAmt', 'FOV kick amount', 'Extra degrees of FOV at top speed.', 'Motion', 14, 0, 30, 1),
   B('shake', 'Camera shake', 'Speed, lightning and impact shake.', 'Motion', true),

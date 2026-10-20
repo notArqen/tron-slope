@@ -54,7 +54,7 @@ export class Pipeline {
       motion: new FSPass(SH.MOTION_FS, { ...D, tColor: { value: null }, uCamWorld: cam.uCamWorld, uPrevVP: cam.uPrevVP, uTime: shared.uTime,
         uMB: { value: 1 }, uMBStrength: { value: 0.6 }, uMBSamples: { value: 8 }, uRadial: { value: 1 }, uRadialStrength: { value: 0.5 }, uCenter: { value: new THREE.Vector2(0.5, 0.5) },
         uHaze: { value: 1 }, uHazeStrength: { value: 0.5 }, uSlopeTan: shared.uSlopeTan, uVents: vol.uVents }),
-      dofPrep: new FSPass(SH.DOF_PREP_FS, { ...D, tColor: { value: null }, uFocus: { value: 10 }, uAperture: { value: 0.5 }, uMaxBlur: { value: 8 } }),
+      dofPrep: new FSPass(SH.DOF_PREP_FS, { ...D, tColor: { value: null }, uFocus: { value: 10 }, uAperture: { value: 0.5 }, uMaxBlur: { value: 8 }, uDofStart: { value: 120 } }),
       dofBlur: new FSPass(SH.DOF_BLUR_FS, { tPrep: { value: null }, uSamples: { value: 24 }, uTexel: { value: new THREE.Vector2() }, uMaxBlur: { value: 8 } }),
       dofComp: new FSPass(SH.DOF_COMP_FS, { tColor: { value: null }, tBlur: { value: null }, tPrep: { value: null } }),
       bright: new FSPass(SH.BRIGHT_FS, { tColor: { value: null }, tMask: { value: null }, uThreshold: { value: 1.4 }, uSelective: { value: 0.6 }, uTexel: { value: new THREE.Vector2() } }),
@@ -287,7 +287,7 @@ export class Pipeline {
     if (s.dof) this.timed('dof', () => {
       const focus = camera.position.distanceTo(ballPos);
       const scaleBlur = s.dofMaxBlur * (t.dof.height / 540);
-      P.dofPrep.u.uFocus.value = focus; P.dofPrep.u.uAperture.value = s.dofAperture; P.dofPrep.u.tColor.value = cur.texture;
+      P.dofPrep.u.uFocus.value = focus; P.dofPrep.u.uAperture.value = s.dofAperture; P.dofPrep.u.uDofStart.value = s.dofStart; P.dofPrep.u.tColor.value = cur.texture;
       this.pass(P.dofPrep, t.dofPrep);
       P.dofBlur.u.tPrep.value = t.dofPrep.texture; P.dofBlur.u.uMaxBlur.value = scaleBlur;
       P.dofBlur.u.uSamples.value = s.dofSamples; P.dofBlur.u.uTexel.value.set(1 / t.dof.width, 1 / t.dof.height);

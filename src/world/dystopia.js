@@ -190,7 +190,7 @@ export class Dystopia {
   newBillboard(i, z) {
     const side = Math.random() < 0.5 ? -1 : 1;
     const w = 6 + Math.random() * 10, h = 3 + Math.random() * 5;
-    const st = { z, x: side * (TRACK_W / 2 + 4 + Math.random() * 8), y: 5 + Math.random() * 22, w, h, side, hue: Math.random() };
+    const st = { z, x: side * (TRACK_W / 2 + 13 + Math.random() * 5), y: 5 + Math.random() * 22, w, h, side, hue: Math.random() };
     this.bbAttr.set([Math.random(), st.hue, w / h, 0], i * 4);
     this.billboards.geometry.attributes.aB.needsUpdate = true;
     return st;
@@ -198,7 +198,7 @@ export class Dystopia {
   newCable(i, z) {
     this.cableZ[i] = z;
     const ya = trackY(z) + 8 + Math.random() * 30, yb = ya + (Math.random() - 0.5) * 10;
-    const xa = -(TRACK_W / 2 + 6 + Math.random() * 20), xb = TRACK_W / 2 + 6 + Math.random() * 20;
+    const xa = -(TRACK_W / 2 + 14 + Math.random() * 12), xb = TRACK_W / 2 + 14 + Math.random() * 12;
     const zb = z + (Math.random() - 0.5) * 20;
     this.cA.set([xa, ya, z], i * 3); this.cB.set([xb, yb, zb], i * 3); this.cS[i] = 1 + Math.random() * 5;
     const g = this.cables.geometry;
@@ -206,7 +206,7 @@ export class Dystopia {
   }
   newFixture(z) {
     const side = Math.random() < 0.5 ? -1 : 1;
-    return { z, x: side * (TRACK_W / 2 + 6 + Math.random() * 4), y: trackY(z) + 3 + Math.random() * 14, ph: Math.random() * 100 };
+    return { z, x: side * (TRACK_W / 2 + 13 + Math.random() * 4), y: trackY(z) + 3 + Math.random() * 14, ph: Math.random() * 100 };
   }
   newVent(z) {
     const side = Math.random() < 0.5 ? -1 : 1;
