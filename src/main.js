@@ -342,6 +342,8 @@ function frame(now) {
   // roll with the deck bank (max 12°)
   camRoll += ((ball.grounded ? -ball.bank : 0) * 0.55 - camRoll) * (1 - Math.exp(-dt * 6));
   camera.rotateZ(Math.max(-0.21, Math.min(0.21, camRoll)));
+  // debug: window.__camOverride = (cam, ball) => {...} lets tooling place the camera (e.g. bike side view)
+  if (window.__camOverride) window.__camOverride(camera, ball);
   camera.fov = 62 + (S.fovKick ? S.fovKickAmt * sp : 0);
   camera.updateProjectionMatrix();
   camera.updateMatrixWorld();

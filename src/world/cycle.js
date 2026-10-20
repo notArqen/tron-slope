@@ -21,14 +21,19 @@ void main(){
   else if (uPart > 2.5) { col = vec3(0.01) + uNeon * 0.15 * fres; }                          // dark hub
   else {
     // gloss black shell with a neon seam along the flank + a spine line on top
-    vec3 env = mix(vec3(0.004), uSmog * 0.06 + vec3(0.02), smoothstep(-0.2, 1.0, n.y)) + poolLight(vWorld, n) * 0.08;
+    vec3 env = mix(vec3(0.003), uSmog * 0.015 + vec3(0.012), smoothstep(-0.2, 1.0, n.y)) + poolLight(vWorld, n) * 0.05; // gloss black
     // capsule is modelled along local y and rotated: local −z is up, local x is across
     float seam = (1.0 - smoothstep(0.015, 0.035, abs(vObj.z + 0.02))) * step(0.12, abs(vObj.x));
     float spine = (1.0 - smoothstep(0.015, 0.035, abs(vObj.x))) * step(0.12, -vObj.z);
     float tail = step(0.7, vObj.y) * step(0.15, -vObj.z + 0.25); // rear cap glows (what you see from behind)
-    float glow = uPart > 0.5 ? 0.0 : max(max(seam, spine * 0.8), tail);
-    col = env + vec3(0.6, 0.7, 0.8) * pow(fres, 2.0) * 0.5 + uNeon * (glow * 9.0 + pow(fres, 1.5) * 2.2); // neon silhouette
-    if (uPart > 0.5) col = vec3(0.01, 0.02, 0.03) + uNeon * 0.25 * fres + vec3(0.5) * pow(fres, 6.0);
+    float sStripe = 0.0;
+    if (uPart > 3.5) { // S-curve sweeping from the top front down to the lower rear, both flanks
+      float target = 0.11 * sin(vObj.y * 2.6 + 0.6) - 0.02;
+      sStripe = (1.0 - smoothstep(0.012, 0.03, abs(-vObj.z - target))) * step(0.1, abs(vObj.x));
+    }
+    float glow = sStripe;
+    col = env + vec3(0.6, 0.7, 0.8) * pow(fres, 3.0) * 0.35 + uNeon * (glow * 9.0 + pow(fres, 4.0) * 0.9); // thin neon silhouette
+    if (uPart > 0.5 && uPart < 3.5) col = vec3(0.01, 0.02, 0.03) + uNeon * 0.25 * fres + vec3(0.5) * pow(fres, 6.0);
     emis = glow;
   }
   writeGBuffer(col, 0.25, (viewMatrix * vec4(n, 0.0)).xyz, emis);
@@ -57,24 +62,39 @@ export class LightCycle {
     this.group = new THREE.Group();
     this.pivot = new THREE.Group();          // leans/pitches; group carries position + heading
     this.group.add(this.pivot);
-    // body: stretched capsule, low and long
-    const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.3, 1.25, 8, 20), mk(0));
-    body.rotation.x = Math.PI / 2; body.scale.set(0.85, 1, 0.75); body.position.y = 0.52;
-    // canopy bubble over the front half
+    // Proportions follow the reference: long low black shell, heavy fairings wrapped
+    // over the top of both wheels, smaller hubless wheels with wide dark tyres, and a
+    // neon S-stripe sweeping down the flank (uPart 4).
+    const add = (geo, mat, [x, y, z], [sx, sy, sz] = [1, 1, 1], rot = null) => {
+      const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.scale.set(sx, sy, sz);
+      if (rot) m.rotation.set(...rot); this.pivot.add(m); return m;
+    };
+    const shell = mk(0), flank = mk(4);
+    // fairings: open-bottomed half shells over the top of each wheel, so the glowing
+    // rims stay visible below them (reference: wheels read as half-hidden, not swallowed)
+    const cowl = new THREE.SphereGeometry(1, 32, 12, 0, Math.PI * 2, 0, Math.PI * 0.5);
+    const shellD = mk(0, THREE.DoubleSide);
+    add(cowl, shellD, [0, 0.47, -0.95], [0.25, 0.34, 0.5], [-0.12, 0, 0]);  // front, nose dipping
+    add(cowl, shellD, [0, 0.47, 0.92], [0.26, 0.4, 0.48], [0.1, 0, 0]);     // rear, taller
+    // spine joining them, carrying the flank stripe; seat dip just ahead of the rear cowl
+    add(new THREE.CapsuleGeometry(0.2, 1.3, 8, 20), flank, [0, 0.5, 0], [1.05, 1, 1.15], [Math.PI / 2, 0, 0]);
+    add(new THREE.SphereGeometry(1, 20, 12), shell, [0, 0.62, 0.38], [0.17, 0.09, 0.3]);
+    // canopy over the front half (rider's tank), low and swept
     const canopy = new THREE.Mesh(new THREE.SphereGeometry(0.26, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2), mk(1));
-    canopy.scale.set(0.8, 0.7, 1.6); canopy.position.set(0, 0.68, -0.18);
-    this.pivot.add(body, canopy);
-    // hubless wheels: glowing rim torus + dark hub disc
+    canopy.scale.set(0.7, 0.45, 1.5); canopy.position.set(0, 0.7, -0.38);
+    this.pivot.add(canopy);
+    // hubless wheels: wide dark tyre + glowing rim + dark hub, tucked under the fairings
     this.wheels = [];
-    for (const z of [-0.78, 0.78]) {
-      const w = new THREE.Group(); w.position.set(0, 0.46, z);
-      const rim = new THREE.Mesh(new THREE.TorusGeometry(0.44, 0.09, 10, 40), mk(2)); rim.rotation.y = Math.PI / 2;
-      const tyre = new THREE.Mesh(new THREE.TorusGeometry(0.46, 0.1, 10, 40), mk(3)); tyre.rotation.y = Math.PI / 2; tyre.scale.set(1, 1, 0.9);
-      const spokes = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.05, 20, 1, true), mk(3, THREE.DoubleSide)); spokes.rotation.z = Math.PI / 2;
-      w.add(tyre, rim, spokes);
+    for (const z of [-0.92, 0.9]) {
+      const w = new THREE.Group(); w.position.set(0, 0.4, z);
+      const tyre = new THREE.Mesh(new THREE.TorusGeometry(0.3, 0.1, 12, 40), mk(3)); tyre.rotation.y = Math.PI / 2; tyre.scale.set(1, 1, 1.9);
+      const rim = new THREE.Mesh(new THREE.TorusGeometry(0.3, 0.045, 10, 40), mk(2)); rim.rotation.y = Math.PI / 2;
+      const rim2 = rim.clone(); rim.position.x = 0.2; rim2.position.x = -0.2; // on the tyre's outer faces
+      const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.22, 20, 1, true), mk(3, THREE.DoubleSide)); hub.rotation.z = Math.PI / 2;
+      w.add(tyre, rim, rim2, hub);
       this.pivot.add(w); this.wheels.push(w);
     }
-    this.group.scale.setScalar(1.25);
+    this.group.scale.setScalar(1.15);
     this.group.visible = false;
     scene.add(this.group);
 
@@ -112,7 +132,7 @@ export class LightCycle {
       this.pitch += (Math.atan2(vel.y, sp) - this.pitch) * (1 - Math.exp(-dt * 10));
       const leanT = Math.max(-0.6, Math.min(0.6, -(ball.vu || 0) * 0.08)) + (ball.grounded ? -ball.bank : 0);
       this.lean += (leanT - this.lean) * (1 - Math.exp(-dt * 8));
-      this.spin += (ball.speed * dt) / 0.46;
+      this.spin += (ball.speed * dt) / 0.4;
     }
     // bike sits on the deck under the collision sphere
     this.group.position.set(ball.x, ball.y - 0.55, ball.z);
@@ -121,7 +141,7 @@ export class LightCycle {
     for (const w of this.wheels) w.rotation.x = -this.spin;
 
     // trail: drop a point every TRAIL_STEP metres of travel at the rear wheel
-    this.tmp.set(0, 0, 0.9).applyAxisAngle(new THREE.Vector3(0, 1, 0), this.yaw).add(this.group.position);
+    this.tmp.set(0, 0, 1.15).applyAxisAngle(new THREE.Vector3(0, 1, 0), this.yaw).add(this.group.position);
     const last = this.pts[0];
     if (!last || last.distanceToSquared(this.tmp) > TRAIL_STEP * TRAIL_STEP) {
       this.pts.unshift(this.tmp.clone());
