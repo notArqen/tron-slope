@@ -26,6 +26,10 @@ const LOOKAHEAD = 260, BEHIND = 40;
 // validator lateral grid
 const GX0 = -26, GDX = 0.05, GN = 1041;
 
+// deck curving downward (slope steepening by dSlope over ds metres) faster than
+// gravity can pull the ball along it → the ball leaves the surface
+export function crestLaunch(v, slopeBefore, slopeAfter, ds) { return (v * v * (slopeAfter - slopeBefore)) / ds > G; }
+
 export function accelAt(v, slopeTan) {
   let a = K_ACC * (1 - v / V_MAX);
   if (slopeTan > TAN_STEEP) a += 2.5; else if (slopeTan < TAN_FLAT) a -= 3;
@@ -55,6 +59,15 @@ class Platform {
     const a = this.sample(z + 1, {}).cx, b = this.sample(z, {}).cx, c = this.sample(z - 1, {}).cx;
     out.dcx = (c - a) / 2; out.kappa = c - 2 * b + a;
     return out;
+  }
+  // deck centre height at z, extrapolated past the ends (entry slope behind, own slope ahead)
+  heightAt(z) {
+    if (z > this.z0) {
+      const sl = this.entrySlope ?? (this.n > 1 ? (this.cy[0] - this.cy[1]) / DZ : 0);
+      return this.cy[0] + (z - this.z0) * sl;
+    }
+    if (z < this.z1) { const n = this.n; return this.cy[n - 1] - (this.z1 - z) * (n > 1 ? (this.cy[n - 2] - this.cy[n - 1]) / DZ : 0); }
+    return this.sample(z, {}).cy;
   }
   rollAt(t) { return this.rot ? this.rot.amp * Math.sin(this.rot.omega * t + this.rot.phase) : 0; }
   // interpolated sample → out { cx, cy, hw, bank }
@@ -241,11 +254,25 @@ export class Course {
   step(chunk, slopeTan, air = false) {
     const c = this.cur;
     const dt = DZ / c.v;
+    // crests: where the deck falls away faster than gravity can follow, the ball
+    // flies (same rule as Ball.step), so those steps are airborne for the validator
+    let flying = false;
+    if (!air) {
+      const deckNext = c.cy - DZ * slopeTan;
+      if (c.fly) {
+        c.bvy -= G * dt; c.by += c.bvy * dt;
+        if (c.by <= deckNext) c.fly = false; else flying = true;
+      } else if (c.lastSlope !== undefined && crestLaunch(c.v, c.lastSlope, slopeTan, DZ)) {
+        c.bvy = -c.lastSlope * c.v; c.by = c.cy + c.bvy * dt - 0.5 * G * dt * dt;
+        c.fly = flying = c.by > deckNext;
+      }
+      c.lastSlope = slopeTan;
+    }
     // the ball spawns at z = 0 with V_MIN: no acceleration on the runway behind the spawn
-    if (!air && c.z <= 0) c.v = Math.max(V_MIN, Math.min(V_MAX, c.v + accelAt(c.v, slopeTan) * dt));
+    if (!air && !flying && c.z <= 0) c.v = Math.max(V_MIN, Math.min(V_MAX, c.v + accelAt(c.v, slopeTan) * dt));
     c.t += dt; c.z -= DZ;
     if (!air) c.cy -= DZ * slopeTan;
-    chunk.steps.push({ z: c.z, t: c.t, v: c.v, air, cy: c.cy });
+    chunk.steps.push({ z: c.z, t: c.t, v: c.v, air: air || flying, cy: c.cy });
   }
 
   // slope that pulls the course back toward the nominal baseline
@@ -265,6 +292,7 @@ export class Course {
       const s = f(k, i * DZ, n * DZ);
       if (s.hw !== undefined) c.hw = s.hw;
       if (s.cx !== undefined) c.cx = s.cx;
+      if (pl.n === 0) pl.entrySlope = c.lastSlope;
       pl.push(c.cx, c.cy, c.hw, s.bank || 0);
       if (i < n) this.step(chunk, s.slope ?? this.baseSlope());
     }
@@ -331,6 +359,7 @@ export class Course {
         chunk.platforms.push(L, Rr);
         const n = Math.round(len / DZ);
         for (let i = 0; i <= n; i++) {
+          if (i === 0) L.entrySlope = Rr.entrySlope = c.lastSlope;
           L.push(cx - lhw - g, c.cy, lhw, 0); Rr.push(cx + lhw + g, c.cy, lhw, 0);
           if (i < n) this.step(chunk, this.baseSlope());
         }
@@ -375,6 +404,7 @@ export class Course {
         const cyAir0 = c.cy;
         for (let i = 0; i < nAir; i++) { this.step(chunk, 0, true); chunk.steps[chunk.steps.length - 1].cy = lerp(cyAir0, yLip - drop, (i + 1) / nAir); }
         c.cy = yLip - drop;
+        c.lastSlope = undefined; c.fly = false;
         // landing platform: offset reachable within frozen lateral speed
         const air = landX / v;
         const off = r.range(-1, 1) * Math.min(1.5, VLAT * air * 0.7 * 0.3);

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { worldMaterial } from './shared.js';
-import { BALL_R, G, STEER_ACC, STEER_DAMP, V_MIN, V_MAX, CENTRIFUGAL, accelAt, deckPoint } from '../game/course.js';
+import { BALL_R, G, STEER_ACC, STEER_DAMP, V_MIN, V_MAX, CENTRIFUGAL, accelAt, deckPoint, crestLaunch } from '../game/course.js';
 
 export { BALL_R };
 
@@ -89,8 +89,9 @@ export class Ball {
       this.vu += a * dt; this.vu *= Math.exp(-STEER_DAMP * dt);
       this.u += this.vu * dt;
       // speed curve: deck slope from the centreline samples
-      // backward difference: at a lip end a forward probe would read past the platform
-      const slopeTan = pl.sample(this.z + 1, {}).cy - pl.sample(this.z, {}).cy;
+      // deck slope behind and ahead (probes continue past platform ends)
+      const hB = pl.heightAt(this.z + 1), h0 = pl.heightAt(this.z), hF = pl.heightAt(this.z - 1);
+      const slopeTan = hB - h0, slopeAhead = h0 - hF;
       this.speed = Math.max(V_MIN, Math.min(V_MAX, this.speed + accelAt(this.speed, slopeTan) * dt));
       this.z -= this.speed * dt;
       this.dist += this.speed * dt;
@@ -102,9 +103,11 @@ export class Ball {
         const n = C.surfaceAt(wx, this.z, t, this.y + 0.3, this.srf);
         if (n) { cur = n.pl; this.pl = cur; this.u = n.u; } else cur = null;
       }
+      // crest: the deck drops away faster than gravity → fly (lateral speed freezes)
+      const crest = cur && !cur.tunnel && crestLaunch(this.speed, slopeTan, slopeAhead, 1);
       const s2 = cur ? cur.sample(this.z, this.s) : null;
       const th2 = cur ? s2.bank + cur.rollAt(C.clockAt(this.z)) : th;
-      if (cur && Math.abs(this.u) <= s2.hw + BALL_R * 0.2) {
+      if (cur && !crest && Math.abs(this.u) <= s2.hw + BALL_R * 0.2) {
         const [wx, wy] = deckPoint(s2.cx, s2.cy, cur.pivot, this.u, th2);
         this.x = wx; this.y = wy + BALL_R;
         if (cur.tunnel && Math.abs(this.u) > s2.hw - BALL_R) {
