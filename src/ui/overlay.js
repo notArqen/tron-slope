@@ -47,7 +47,7 @@ export class Overlay {
     this.sections = {};
     for (const name of SECTIONS) {
       const det = this.el('details', 'ov-sec');
-      if (name === 'Performance') det.open = true;
+      if (name === 'Performance' || name === 'Game') det.open = true;
       const sum = this.el('summary', null, name);
       if (name === 'Weather') { this.wxBadge = this.el('span', 'ov-badge', ''); sum.append(this.wxBadge); }
       det.append(sum);

@@ -18,6 +18,7 @@ import { Sky } from './world/sky.js';
 import { Dystopia, LightPool, createVolumeUniforms } from './world/dystopia.js';
 import { Particles } from './world/particles.js';
 import { Floaters } from './world/floaters.js';
+import { LightCycle } from './world/cycle.js';
 import { Pipeline } from './post/pipeline.js';
 import { Overlay } from './ui/overlay.js';
 
@@ -62,6 +63,7 @@ let seed = parseSeed(hashSeed) ?? randomSeed();
 course.minD = Math.min(1, Math.max(0, Number((location.hash.match(/[#&]d=([\d.]+)/) || [])[1]) || 0)); // debug/practice floor
 course.reset(seed);
 const ball = new Ball(L.ball, shared, course);
+const cycle = new LightCycle(L.ball, shared);
 const pool = new LightPool(shared);
 const depthU = { uDepth: { value: null }, uRes: { value: new THREE.Vector2(1, 1) }, uNearFar: { value: new THREE.Vector2(0.1, 3000) } };
 const particles = new Particles({ ...shared, ...vol }, depthU);
@@ -86,7 +88,7 @@ for (const l of layers) l.visible = true;
 
 const worldMaterials = [];
 for (const l of layers) l.scene.traverse((o) => { if (o.material && !worldMaterials.includes(o.material)) worldMaterials.push(o.material); });
-for (const mtl of courseView.materials) if (!worldMaterials.includes(mtl)) worldMaterials.push(mtl);
+for (const mtl of [...courseView.materials, ...cycle.materials]) if (!worldMaterials.includes(mtl)) worldMaterials.push(mtl);
 
 // ---------------------------------------------------------------- HUD + scores
 const hud = new Hud();
@@ -97,6 +99,7 @@ const overlay = new Overlay(settings, perf, { probe: (key) => startProbe(key) })
 
 // ---------------------------------------------------------------- sizing / dynamic resolution
 let dynScale = 1, dynCooldown = 0, camRoll = 0;
+let idleFrameDone = false; // paused: draw once, then stop until something changes
 function internalSize() {
   const dpr = Math.min(devicePixelRatio || 1, S.maxDpr);
   const cw = innerWidth, ch = innerHeight;
@@ -114,7 +117,11 @@ function resize() {
   pipeline.setSize(z.w, z.h, z.ow, z.oh, { halfRes: S.halfResEffects, particleScale: pScale });
   depthU.uNearFar.value.set(camera.near, camera.far);
 }
-addEventListener('resize', resize);
+addEventListener('resize', () => { idleFrameDone = false; resize(); });
+
+function overlayInfo(reactDist = 0) {
+  return { dynScale, size: pipeline.size, weather: weather.target, reactDist, timingMode: perf.timingMode, course: course.stats, seed: seedToString(seed) };
+}
 
 function updateDynRes(dt) {
   dynCooldown -= dt;
@@ -129,9 +136,11 @@ function updateDynRes(dt) {
 // ---------------------------------------------------------------- settings → engine
 const SHADOW = { off: 0, blob: 1, soft: 2, ultra: 3 };
 settings.on((k, v) => {
+  idleFrameDone = false;
   if (['renderScale', 'maxDpr', 'halfResEffects', 'particleCount', 'dynRes'].includes(k)) { if (k === 'dynRes' && !v) dynScale = 1; resize(); }
   if (k === 'wireframe') for (const m of worldMaterials) m.wireframe = v;
   if (k === 'neonPalette') applyPalette();
+  if (k === 'vehicle') { menu?.setVehicle(v); cycle.reset(); }
 });
 function applyPalette() {
   const p = PALETTES[S.neonPalette];
@@ -167,7 +176,7 @@ function startRun(newSeed, { attract = false } = {}) {
   course.reset(seed);
   ball.reset();
   ball.mesh.visible = true;
-  city.reset(0); dys.reset(0); floaters.reset(0);
+  city.reset(0); dys.reset(0); floaters.reset(0); cycle.reset();
   pipeline.historyValid = false;
   camPos.set(0, ball.y + 2.6, 7.2);
   deathT = -1; acc = 0;
@@ -192,7 +201,7 @@ function toMenu() {
 
 function pause() {
   if (phase !== 'run') return;
-  phase = 'paused'; ball.keys.clear();
+  phase = 'paused'; ball.keys.clear(); idleFrameDone = false;
   menu.showPause(seedToString(seed), autoplay);
 }
 function resume() { if (phase === 'paused') { phase = 'run'; menu.hidePause(); } }
@@ -217,10 +226,12 @@ const menu = new Menu({
   play: (seedText, d) => { autoplay = false; playD = d; const s = seedText ? parseSeed(seedText) : null; startRun(s ?? randomSeed()); },
   autoplay: (d) => { autoplay = true; playD = d; startRun(randomSeed()); },
   toggleAutoplay: () => { setAutoplay(!autoplay); menu.setAutoLabel(autoplay); },
+  vehicle: (v) => settings.set('vehicle', v),
   settings: () => overlay.toggle(true),
   resume, restart: () => startRun(seed), newSeed: () => startRun(randomSeed()), quit: toMenu,
 });
 
+menu.setVehicle(S.vehicle);
 const overlayOpen = () => !document.getElementById('overlay').hidden;
 addEventListener('keydown', (e) => {
   if (e.defaultPrevented || overlayOpen() || e.target.closest?.('#overlay, #summary input, #menu input')) return;
@@ -255,6 +266,10 @@ function frame(now) {
     fpsCapAcc = Math.min(fpsCapAcc - minDt, minDt);
   } else last = now;
 
+  // paused: the world is frozen, so after one frame there is nothing new to draw —
+  // skip the whole pipeline (this is what kept the GPU near 90% while paused)
+  if (phase === 'paused' && idleFrameDone) { last = now; perf._last = now; overlay.tick(now, overlayInfo()); return; }
+  if (phase === 'paused') idleFrameDone = true;
   const frameStart = performance.now();
   const rawDt = perf.frame(now) / 1000;
   const dt = Math.min(rawDt, 1 / 20);
@@ -268,6 +283,11 @@ function frame(now) {
   if ((phase === 'run' && autoplay) || phase === 'menu') autopilot.think(ball, simDt);
   while (acc >= STEP) { if (phase === 'run' || phase === 'menu') stepSim(STEP); acc -= STEP; }
   ball.sync();
+  {
+    const alive = phase !== 'dying' && phase !== 'summary', isCycle = S.vehicle === 'cycle';
+    ball.mesh.visible = alive && !isCycle;
+    cycle.update(ball, simDt, isCycle, alive);
+  }
   course.fill(ball.z, 1);
   courseView.update(course.clockAt(ball.z), ball.z);
   if (deathT >= 0) {
@@ -383,7 +403,7 @@ function frame(now) {
 
   // HUD
   hud.frame(score(), ball.speed, S.godMode);
-  overlay.tick(now, { dynScale, size: pipeline.size, weather: weather.target, reactDist, timingMode: perf.timingMode, course: course.stats, seed: seedToString(seed) });
+  overlay.tick(now, overlayInfo(reactDist));
 }
 requestAnimationFrame(frame);
 

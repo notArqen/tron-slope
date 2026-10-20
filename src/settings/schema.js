@@ -2,13 +2,16 @@
 // default, range. The overlay is generated from this table; presets override a
 // subset. `alsoIn` renders the same control in a second section.
 
-export const SECTIONS = ['Performance', 'Quality', 'Light', 'Surfaces', 'Atmosphere', 'Weather', 'Lens', 'Motion', 'Color', 'Style', 'Debug'];
+export const SECTIONS = ['Game', 'Performance', 'Quality', 'Light', 'Surfaces', 'Atmosphere', 'Weather', 'Lens', 'Motion', 'Color', 'Style', 'Debug'];
 
 const R = (key, label, tip, section, def, min, max, step, extra = {}) => ({ key, label, tip, section, type: 'range', def, min, max, step, ...extra });
 const B = (key, label, tip, section, def, extra = {}) => ({ key, label, tip, section, type: 'bool', def, ...extra });
 const S = (key, label, tip, section, def, options, extra = {}) => ({ key, label, tip, section, type: 'select', def, options, ...extra });
 
 export const SCHEMA = [
+  // ---------------------------------------------------------------- Game
+  S('vehicle', 'Vehicle', 'Ride as the ball or a light cycle (same physics either way).', 'Game', 'ball', [['ball', 'Ball'], ['cycle', 'Light cycle']]),
+
   // ---------------------------------------------------------------- Performance
   S('preset', 'Preset', 'Applies a full quality tier; any manual change flips this to Custom.', 'Performance', 'high',
     [['low', 'Low'], ['medium', 'Medium'], ['high', 'High'], ['ultra', 'Ultra'], ['custom', 'Custom']]),

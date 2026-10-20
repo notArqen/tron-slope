@@ -13,7 +13,7 @@ export class Menu {
     this.level = (() => { try { return localStorage.getItem(LS_START) || 'easy'; } catch { return 'easy'; } })();
 
     // start-difficulty segmented control
-    const seg = this.title.querySelector('.m-level');
+    const seg = this.title.querySelector('.m-level:not(.m-vehicle)');
     for (const [id, label] of START_LEVELS) {
       const b = document.createElement('button');
       b.type = 'button'; b.textContent = label; b.dataset.level = id; b.setAttribute('role', 'radio');
@@ -22,6 +22,8 @@ export class Menu {
     }
     this.setLevel(this.level);
 
+    // vehicle picker mirrors the Game → Vehicle setting
+    for (const b of this.title.querySelectorAll('.m-vehicle button')) b.onclick = () => this.h.vehicle(b.dataset.vehicle);
     this.title.addEventListener('click', (e) => {
       const act = e.target.closest('[data-act]')?.dataset.act;
       if (act === 'play') this.h.play(null, this.startD());
@@ -40,6 +42,8 @@ export class Menu {
     for (const root of [this.title, this.pause]) root.addEventListener('keydown', (e) => this.nav(e, root));
   }
 
+  setVehicle(v) { for (const b of this.title.querySelectorAll('.m-vehicle button')) b.setAttribute('aria-checked', String(b.dataset.vehicle === v)); }
+
   startD() { return START_LEVELS.find(([id]) => id === this.level)[2]; }
 
   setLevel(id) {
@@ -57,6 +61,10 @@ export class Menu {
       e.preventDefault(); e.stopPropagation();
       const n = items[(i + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length];
       n && n.focus();
+    } else if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && document.activeElement?.closest('.m-vehicle')) {
+      e.preventDefault(); e.stopPropagation();
+      const v = e.key === 'ArrowRight' ? 'cycle' : 'ball'; this.h.vehicle(v);
+      this.title.querySelector(`.m-vehicle [data-vehicle="${v}"]`).focus();
     } else if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && document.activeElement?.closest('.m-level')) {
       e.preventDefault(); e.stopPropagation();
       const k = START_LEVELS.findIndex(([id]) => id === this.level);

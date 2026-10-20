@@ -131,3 +131,14 @@ Segment choice is weighted random among the unlocked types. No type appears more
 ## 10. Out of scope for Phase 3
 
 Audio, menus beyond the death summary, leaderboards, cosmetics.
+
+---
+
+## Amendments (owner requests after approval, 2026-10-20)
+
+- **A1 Winding sections.** Long sweeping S-bends, 120–220 m long, amplitude ≤ 9 m (min radius 25 m), width 3–5 m. They also roll up and down, with crests placed on the bend inflections so hops only happen where the track runs straight. Unlocks at d = 0.25. [assumed]
+- **A2 Crest airtime.** The ball leaves the deck wherever the deck drops away faster than gravity can follow (`v²·Δslope/Δs > g`). No steering in the air. The generator predicts the same flights, so the validator treats them as no-steer steps.
+- **A3 Thin platforms widened.** 2.2–3.2 m instead of 1.6–2.5 m (owner: "too hard").
+- **A4 Tunnels** are octagonal in section. Floating wireframe cubes drift beside the track (visual only).
+- **A5 Curves.** The ball follows the deck heading and feels 10% of the centrifugal pull. Curvature is clamped at 1/25 m.
+- **A6 Modes.** Title screen, pause menu, Autoplay (model-predictive autopilot; runs never count toward bests), and a light-cycle vehicle that is visual only, with the same physics and collision sphere as the ball.

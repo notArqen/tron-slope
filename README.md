@@ -1,5 +1,7 @@
 # tron-slope
 
+**All downhill from here.**
+
 A Slope-style rolling-ball runner rebuilt on a three.js (WebGL2) neon-dystopia renderer. No engine, no UI framework.
 
 ```bash
@@ -7,7 +9,7 @@ npm install
 npm run dev
 ```
 
-**Controls:** ← → / A D to steer · `` ` `` settings overlay (the game keeps running behind it) · after a crash: Space / ← → retries the same seed, R starts a new one, or type a seed into the summary.
+**Controls:** ← → / A D to steer · Esc / P pause · title screen has Autoplay (← → takes over) and a Ball / Light cycle picker · `` ` `` settings overlay (the game keeps running behind it) · after a crash: Space / ← → retries the same seed, R starts a new one, or type a seed into the summary.
 
 **Seeds:** every run is seeded and shown bottom-left. `#seed=0000BEEF` in the URL replays a run; `&d=0.8` sets a difficulty floor (practice / debug).
 

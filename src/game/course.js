@@ -345,7 +345,8 @@ export class Course {
         break;
       }
       case 'thin': {
-        const len = r.range(50, 90), hw1 = lerp(1.25, 0.8, d), w0 = c.hw, cx0 = c.cx;
+        // owner feedback: the original 1.6–2.5 m was too hard → 2.2–3.2 m (SPEC amendment A3)
+        const len = r.range(50, 90), hw1 = lerp(1.6, 1.1, d), w0 = c.hw, cx0 = c.cx;
         // amplitude limited by minimum radius 35 m (S-curve: A·k² ≤ 1/35)
         const k2 = (2 * Math.PI / len) ** 2, Amax = Math.min(6, 1 / (35 * k2));
         const A = r.range(0.4, 1) * Amax * (r() < 0.5 ? 1 : -1), sCurve = r() < 0.6;
