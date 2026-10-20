@@ -9,7 +9,7 @@ export class LensDroplets {
   constructor(max = 96) {
     this.max = max;
     this.list = [];
-    this.rt = new THREE.WebGLRenderTarget(384, 216, { type: THREE.UnsignedByteType, depthBuffer: false });
+    this.rt = new THREE.WebGLRenderTarget(768, 432, { type: THREE.UnsignedByteType, depthBuffer: false });
     const g = new THREE.InstancedBufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute([-0.5, -0.5, 0, 0.5, -0.5, 0, 0.5, 0.5, 0, -0.5, 0.5, 0], 3));
     g.setIndex([0, 1, 2, 0, 2, 3]);
@@ -32,7 +32,11 @@ export class LensDroplets {
     this.spawnAcc += dt * amount * 22 * density;
     while (this.spawnAcc > 1 && this.list.length < cap) {
       this.spawnAcc -= 1;
-      this.list.push({ x: Math.random(), y: Math.random(), r: 0.006 + Math.random() * 0.018, vx: 0, vy: 0, life: 4 + Math.random() * 8, age: 0, trail: 0 });
+      // bias spawns toward the frame edges: reject most candidates near the centre
+      let x, y, tries = 0;
+      do { x = Math.random(); y = Math.random(); tries++; }
+      while (tries < 8 && Math.random() > Math.min(1, Math.pow(Math.hypot(x - 0.5, y - 0.5) / 0.55, 2.5)));
+      this.list.push({ x, y, r: 0.004 + Math.random() * 0.006, vx: 0, vy: 0, life: 4 + Math.random() * 8, age: 0, trail: 0 });
     }
     if (this.list.length >= cap) this.spawnAcc = 0;
     // wind at the camera, projected onto screen-right
@@ -42,7 +46,7 @@ export class LensDroplets {
     for (let i = this.list.length - 1; i >= 0; i--) {
       const d = this.list[i];
       d.age += dt * (1 + speedN * 3); // cleared faster at high speed
-      const big = d.r > 0.014;
+      const big = d.r > 0.008;
       // airflow pushes outward from the centre at speed
       const ox = d.x - 0.5, oy = d.y - 0.5;
       d.vx += (ox * speedN * 0.9 + wx) * dt;

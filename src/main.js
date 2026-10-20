@@ -75,6 +75,15 @@ const hud = document.getElementById('hud');
 const hudScore = hud.querySelector('.score');
 const hudSpeed = hud.querySelector('.speed');
 const hudMsg = hud.querySelector('.msg');
+const hudBest = hud.querySelector('.best');
+// high score: persisted locally; a run only counts if it wasn't in no-death mode
+const BEST_KEY = 'tron-slope.best.v1';
+let best = 0;
+try { best = Number(localStorage.getItem(BEST_KEY)) || 0; } catch { /* private mode */ }
+let runBestFlagged = false;
+const score = () => Math.floor(ball.dist / 4);
+function renderBest() { hudBest.textContent = best ? `best ${best}` : ''; }
+renderBest();
 
 // ---------------------------------------------------------------- overlay
 const overlay = new Overlay(settings, perf, { probe: (key) => startProbe(key) });
@@ -146,6 +155,8 @@ function resetRun() {
   camPos.set(0, trackY(0) + 3.2, 8);
   deathT = -1;
   hudMsg.textContent = '';
+  hudMsg.classList.remove('newbest');
+  runBestFlagged = false;
 }
 
 function die() {
@@ -153,7 +164,12 @@ function die() {
   if (deathT >= 0) return;
   ball.dead = true;
   deathT = 0; glitch = 1; shakeImpact = 1;
-  hudMsg.textContent = 'crashed';
+  const sc = score();
+  if (sc > best) {
+    best = sc; renderBest();
+    try { localStorage.setItem(BEST_KEY, String(best)); } catch { /* quota */ }
+    hudMsg.textContent = `new best ${sc}`; hudMsg.classList.add('newbest');
+  } else hudMsg.textContent = 'crashed';
 }
 
 function stepSim(dt) {
@@ -293,7 +309,11 @@ function frame(now) {
   updateDynRes(dt);
 
   // HUD
-  hudScore.textContent = Math.floor(ball.dist / 4);
+  const sc = score();
+  hudScore.textContent = sc;
+  // passing the old best mid-run lights the score up (no-death runs never count)
+  if (!S.godMode && best > 0 && sc > best && !runBestFlagged) { runBestFlagged = true; hudScore.classList.add('beating'); }
+  if (!runBestFlagged) hudScore.classList.remove('beating');
   hudSpeed.textContent = (ball.speed * 3.6).toFixed(0) + ' km/h';
   overlay.tick(now, { dynScale, size: pipeline.size, weather: weather.target, reactDist, timingMode: perf.timingMode });
 }

@@ -486,8 +486,13 @@ void main(){
   if (uDist == 1) { float r2 = dot(cc * vec2(uAspect, 1.0), cc * vec2(uAspect, 1.0)); uv = 0.5 + cc * (1.0 - uDistAmt * r2) / (1.0 - uDistAmt * 0.25); }
   vec4 drop = vec4(0.0);
   if (uDrops == 1) {
-    drop = texture(tDrops, uv);
-    uv += (drop.xy * 2.0 - 1.0) * drop.b * 0.05;
+    // slight radial blur from the centre: average taps toward the middle so drops smear outward
+    vec2 rdir = (uv - 0.5) * 0.035;
+    for (int k = 0; k < 5; k++) drop += texture(tDrops, uv - rdir * (float(k) / 4.0));
+    drop /= 5.0;
+    // only prominent toward the edges; the centre of the frame stays clean
+    drop.b *= smoothstep(0.12, 0.5, length(cc * vec2(uAspect, 1.0)) / max(uAspect, 1.0) * 1.6);
+    uv += (drop.xy * 2.0 - 1.0) * drop.b * 0.03;
   }
   vec3 col;
   if (uCA == 1) {
