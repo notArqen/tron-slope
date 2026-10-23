@@ -92,7 +92,7 @@ for (const mtl of [...courseView.materials, ...cycle.materials]) if (!worldMater
 
 // ---------------------------------------------------------------- HUD + scores
 const hud = new Hud();
-const score = () => Math.floor(ball.dist / 4);
+const score = () => Math.floor(ball.dist / 4) + ball.bonus; // distance + shard pickups
 
 // ---------------------------------------------------------------- overlay
 const overlay = new Overlay(settings, perf, { probe: (key) => startProbe(key) });
@@ -404,7 +404,7 @@ function frame(now) {
   updateDynRes(dt);
 
   // HUD
-  hud.frame(score(), ball.speed, S.godMode);
+  hud.frame(score(), ball.vt, S.godMode);
   overlay.tick(now, overlayInfo(reactDist));
 }
 requestAnimationFrame(frame);

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { worldMaterial } from './shared.js';
-import { BALL_R, G, STEER_ACC, STEER_DAMP, V_MIN, V_MAX, CENTRIFUGAL, accelAt, deckPoint, crestLaunch } from '../game/course.js';
+import { BALL_R, G, STEER_ACC, STEER_DAMP, V_MIN, V_MAX, CENTRIFUGAL, accelAt, crestLaunch, BOOST_ADD, BOOST_KEEP, BOOST_TAU, PIPE_F, PIPE_R, PIPE_LAUNCH } from '../game/course.js';
 
 export { BALL_R };
 
@@ -56,7 +56,7 @@ export class Ball {
     // that never get a keyup, so a fresh run would otherwise inherit a stuck ← or →
     this.keys.clear();
     this.x = 0; this.z = 0; this.u = 0; this.vu = 0;
-    this.speed = V_MIN; this.minSpeed = V_MIN; this.maxSpeed = V_MAX;
+    this.speed = V_MIN; this.minSpeed = V_MIN; this.maxSpeed = V_MAX; this.boost = 0; this.bonus = 0;
     this.vx = 0; this.vy = 0;
     this.grounded = true; this.pl = null;
     this.dead = false; this.deathCause = null;
@@ -71,7 +71,8 @@ export class Ball {
   }
 
   get falling() { return !this.grounded; }
-  get speedN() { return (this.speed - this.minSpeed) / (this.maxSpeed - this.minSpeed); }
+  get vt() { return this.speed + this.boost; }   // forward speed incl. boost surge
+  get speedN() { return Math.min(1.3, (this.vt - this.minSpeed) / (this.maxSpeed - this.minSpeed)); }
 
   kill(cause) { if (!this.dead) { this.dead = true; this.deathCause = cause; } }
 
@@ -84,46 +85,51 @@ export class Ball {
     const px = this.x, py = this.y, pz = this.z;
 
     if (this.grounded) {
-      const pl = this.pl, s = pl.sample(this.z, this.s);
+      const pl = this.pl, g = pl.geo(this.z, t, this.s), P = this.P || (this.P = {});
       pl.bend(this.z, this.bd);
-      const th = s.bank + pl.rollAt(t);
-      this.bank = th;
-      const a = this.input * STEER_ACC - CENTRIFUGAL * this.speed * this.speed * this.bd.kappa - G * Math.sin(th);
-      this.vu += a * dt; this.vu *= Math.exp(-STEER_DAMP * dt);
+      this.bank = g.th;
+      pl.point(this.u, g, P);
+      const vt = this.vt;
+      const a = this.input * STEER_ACC - CENTRIFUGAL * vt * vt * this.bd.kappa + P.pull + pl.jetAt(this.z);
+      this.vu += a * dt; this.vu *= Math.exp(-STEER_DAMP * (pl.pipe && Math.abs(this.u) > PIPE_F ? 0.35 : 1) * dt);
+      const pu = this.u;
       this.u += this.vu * dt;
-      // speed curve: deck slope from the centreline samples
       // deck slope behind and ahead (probes continue past platform ends)
       const hB = pl.heightAt(this.z + 1), h0 = pl.heightAt(this.z), hF = pl.heightAt(this.z - 1);
       const slopeTan = hB - h0, slopeAhead = h0 - hF;
       this.speed = Math.max(V_MIN, Math.min(V_MAX, this.speed + accelAt(this.speed, slopeTan) * dt));
-      this.z -= this.speed * dt;
-      this.dist += this.speed * dt;
+      // boost pads: surge that decays + small permanent gain (Course.step mirrors this)
+      const nz = this.z - vt * dt;
+      for (const pz of pl.pads) if (this.z > pz && nz <= pz) { this.speed = Math.min(V_MAX, this.speed + BOOST_KEEP); this.boost += BOOST_ADD; this.boosted = 0.6; }
+      this.z = nz;
+      this.dist += vt * dt;
 
-      // continue onto the next platform when this one ends
+      // continue onto the next platform when this one ends (or a blink tile switches off)
       let cur = pl;
-      if (this.z < pl.z1) {
-        const [wx] = deckPoint(s.cx, s.cy, pl.pivot, this.u, th);
-        const n = C.surfaceAt(wx, this.z, t, this.y + 0.3, this.srf);
+      if (this.z < pl.z1 || !pl.solidAt(t)) {
+        const n = this.z < pl.z1 ? C.surfaceAt(P.x, this.z, t, this.y + 0.3, this.srf) : null;
         if (n) { cur = n.pl; this.pl = cur; this.u = n.u; } else cur = null;
       }
       // crest: the deck drops away faster than gravity → fly (lateral speed freezes)
-      const crest = cur && !cur.tunnel && crestLaunch(this.speed, slopeTan, slopeAhead, 1);
-      const s2 = cur ? cur.sample(this.z, this.s) : null;
-      const th2 = cur ? s2.bank + cur.rollAt(C.clockAt(this.z)) : th;
-      if (cur && !crest && Math.abs(this.u) <= s2.hw + BALL_R * 0.2) {
-        const [wx, wy] = deckPoint(s2.cx, s2.cy, cur.pivot, this.u, th2);
-        this.x = wx; this.y = wy + BALL_R;
-        if (cur.tunnel && Math.abs(this.u) > s2.hw - BALL_R) {
-          if (godMode) { this.u = Math.sign(this.u) * (s2.hw - BALL_R); this.vu = 0; } else this.kill('wall');
+      const crest = cur && !cur.tunnel && crestLaunch(this.vt, slopeTan, slopeAhead, 1);
+      // half-pipe lip: riding up past the top of a wall launches the ball straight up
+      const pipeLaunch = cur && cur.pipe && Math.abs(this.u) - PIPE_F > PIPE_R * PIPE_LAUNCH && this.u * this.vu > 0;
+      const g2 = cur ? cur.geo(this.z, t, this.s) : null;
+      if (cur && !crest && !pipeLaunch && Math.abs(this.u) <= g2.hw + BALL_R * 0.2) {
+        cur.point(this.u, g2, P);
+        // sit on the surface along its normal (matters on half-pipe walls)
+        const nlen = Math.hypot(P.slope, 1);
+        this.x = P.x - (P.slope / nlen) * BALL_R * (cur.pipe ? 1 : 0); this.y = P.y + BALL_R / (cur.pipe ? nlen : 1);
+        if (cur.tunnel && Math.abs(this.u) > g2.hw - BALL_R) {
+          if (godMode) { this.u = Math.sign(this.u) * (g2.hw - BALL_R); this.vu = 0; } else this.kill('wall');
         }
       } else {
-        // leave the deck: off the side, or off the end of a lip
+        // leave the deck: off the side, off a lip, over a crest, out of a pipe, or a tile vanished
         cur && cur.bend(this.z, this.bd);
-        this.vx = this.vu * Math.cos(th) + this.speed * (this.bd.dcx || 0);
-        // take off with the deck's own vertical velocity (descending lip = −v·slope)
-        this.vy = -slopeTan * this.speed;
-        const [wx] = deckPoint(s.cx, s.cy, pl.pivot, this.u, th);
-        this.x = wx;
+        const head = this.vt * (this.bd.dcx || 0);
+        if (pipeLaunch) { this.vy = Math.abs(this.vu) * 0.95; this.vx = head; this.u = pu; }
+        else { this.vx = this.vu * Math.cos(g.th) + head; this.vy = -slopeTan * this.vt; }
+        this.x = P.x;
         this.y = py + this.vy * dt;
         this.grounded = false; this.pl = null;
       }
@@ -131,15 +137,15 @@ export class Ball {
       this.vy -= G * dt;
       this.y += this.vy * dt;
       this.x += this.vx * dt;
-      this.z -= this.speed * dt;
-      this.dist += this.speed * dt;
+      this.z -= this.vt * dt;
+      this.dist += this.vt * dt;
       const srf = C.surfaceAt(this.x, this.z, C.clockAt(this.z), this.y, this.srf);
       if (srf && this.y - BALL_R <= srf.y + 0.05 && py - BALL_R >= srf.y - 0.6) {
         this.grounded = true; this.pl = srf.pl; this.u = srf.u;
         // world lateral velocity → deck-relative: remove the deck's own heading, or every
         // hop on a curve would add speed·heading to the sideways speed and fling the ball off
         srf.pl.bend(this.z, this.bd);
-        this.vu = (this.vx - this.speed * this.bd.dcx) * Math.cos(srf.theta); this.vy = 0;
+        this.vu = (this.vx - this.vt * this.bd.dcx) * Math.cos(srf.theta); this.vy = 0;
         this.y = srf.y + BALL_R;
       } else {
         const floor = C.centreAt(this.z, this.ctr).cy - 9;
@@ -149,6 +155,11 @@ export class Ball {
       }
     }
 
+    if (this.boost) { this.boost *= Math.exp(-dt / BOOST_TAU); if (this.boost < 0.05) this.boost = 0; }
+    if (this.boosted) this.boosted = Math.max(0, this.boosted - dt);
+    // shard pickups
+    const got = this.isSim ? 0 : C.collectShards(this.x, this.y, this.z); // sim balls (autopilot rollouts) never take real shards
+    if (got) { this.bonus += got; this.picked = (this.picked || 0) + 1; }
     if (!this.dead && !godMode && C.hitObstacle(this.x, this.y, this.z, BALL_R * 0.95, C.clockAt(this.z))) this.kill('hit');
 
     // rolling: rotate about the axis perpendicular to world motion
