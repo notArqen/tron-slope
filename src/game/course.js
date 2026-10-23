@@ -531,10 +531,14 @@ export class Course {
       }
       case 'kicker': {
         // (A10) launch ramp on a straight: a short uphill kicker, then the crest throws you
-        const w0 = c.hw, lead = r.range(20, 35), up = Math.tan(r.range(8, 14) * DEG);
+        // sized to the predicted speed: airtime T = 2v(up + base)/G → ~0.8–1.1 s at any speed,
+        // and the landing run-out covers the whole predicted flight (v·T) plus margin
+        const w0 = c.hw, lead = r.range(20, 35), v = c.v + (c.boost || 0), T = r.range(0.8, 1.1);
+        const up = Math.min(0.25, Math.max(0.05, (T * G) / (2 * v) - SLOPE_TAN));
+        const flight = (2 * v * v * (up + SLOPE_TAN)) / G;
         const p = deck();
-        this.run(chunk, p, lead + 6 + 40, (k, dist, L) => ({ hw: ease(w0, 3.5, dist, L), slope: dist > lead && dist < lead + 6 ? -up : undefined }));
-        if (d >= 0.3) this.placeObstacles(chunk, p, d, ['block'], 1.4);
+        this.run(chunk, p, lead + 6 + flight * 1.2 + 20, (k, dist, L) => ({ hw: ease(w0, 3.5, dist, L), slope: dist > lead && dist < lead + 6 ? -up : SLOPE_TAN }));
+        // no obstacles: the flight path and landing stay clear
         break;
       }
       case 'blink': {
