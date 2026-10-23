@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { worldMaterial } from '../world/shared.js';
 import { PUDDLE_GLSL, OBST_VS, OBST_FS } from '../world/track.js';
-import { DZ, obstacleBoxes } from './course.js';
+import { DZ, obstacleBoxes, pipeProfile } from './course.js';
 
 // Renders the streamed course: pooled deck + tunnel meshes (geometry rewritten in
 // place on reuse, never reallocated) and one instanced mesh for every obstacle box.
@@ -11,26 +11,36 @@ const LIP = 0.7;
 const TUBE_H = 5;
 
 const ROT_VS = /* glsl */`
-attribute vec4 aRot;    // amp, omega, phase, -
+attribute vec4 aRot;    // amp, omega, phase, kind (0 roll, 1 shuttle slide, 2+duty blink)
 attribute vec2 aPivot;  // rotation pivot (x, y) for rotating tunnels
 uniform float uRunTime;
-vec3 rotDeck(vec3 p){ if (aRot.x == 0.0) return p; float th = aRot.x * sin(aRot.y * uRunTime + aRot.z);
+float blinkWarn = 0.0;
+vec3 rotDeck(vec3 p){
+  if (aRot.x == 0.0) return p;
+  if (aRot.w > 1.5) {                 // blink tile: collapse while off, warn just before switching off
+    float duty = aRot.w - 2.0, f = fract((aRot.y * uRunTime + aRot.z) / 6.2831853);
+    if (f >= duty) return vec3(0.0, -1e5, 0.0);
+    blinkWarn = smoothstep(duty - 0.2, duty, f);
+    return p;
+  }
+  if (aRot.w > 0.5) return p + vec3(aRot.x * sin(aRot.y * uRunTime + aRot.z), 0.0, 0.0); // shuttle
+  float th = aRot.x * sin(aRot.y * uRunTime + aRot.z);
   vec2 d = p.xy - aPivot; float c = cos(th), s = sin(th); return vec3(aPivot + vec2(d.x * c - d.y * s, d.x * s + d.y * c), p.z); }
-vec3 rotN(vec3 n){ if (aRot.x == 0.0) return n; float th = aRot.x * sin(aRot.y * uRunTime + aRot.z); float c = cos(th), s = sin(th); return vec3(n.x * c - n.y * s, n.x * s + n.y * c, n.z); }
+vec3 rotN(vec3 n){ if (aRot.x == 0.0 || aRot.w > 0.5) return n; float th = aRot.x * sin(aRot.y * uRunTime + aRot.z); float c = cos(th), s = sin(th); return vec3(n.x * c - n.y * s, n.x * s + n.y * c, n.z); }
 `;
 
 const DECK_VS = ROT_VS + /* glsl */`
 attribute vec4 aDeck;   // u, hw, s (along), distance to an open end
 attribute float aSide;  // 1 on the side lips
-varying vec3 vWorld; varying vec3 vNormalW; varying vec4 vDeck; varying float vSide;
+varying vec3 vWorld; varying vec3 vNormalW; varying vec4 vDeck; varying float vSide; varying float vWarn;
 void main(){
   vec3 p = rotDeck(position);
-  vWorld = p; vNormalW = rotN(normal); vDeck = aDeck; vSide = aSide;
+  vWorld = p; vNormalW = rotN(normal); vDeck = aDeck; vSide = aSide; vWarn = blinkWarn;
   gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
 }`;
 
 const DECK_FS = PUDDLE_GLSL + /* glsl */`
-varying vec3 vWorld; varying vec3 vNormalW; varying vec4 vDeck; varying float vSide;
+varying vec3 vWorld; varying vec3 vNormalW; varying vec4 vDeck; varying float vSide; varying float vWarn;
 void main(){
   vec3 p = vWorld; vec3 n = normalize(vNormalW);
   vec3 neon = uNeon; float t = uTime;
@@ -68,6 +78,8 @@ void main(){
     float blob = ballBlob(p);
     col = lit * blob + neon * lines * (2.2 * live + surge * 6.0) * mix(0.6, 1.0, uPower) * mix(0.6, 1.0, blob);
     col += neon * max(edge, endEdge) * 3.0 * edgeBoost;
+    // blink tile about to vanish: hazard-red pulse
+    col = mix(col, uNeon2 * (1.5 + 2.5 * gridLine(s, 1.2, 0.08)), vWarn * (0.6 + 0.4 * sin(uTime * 40.0)));
     emis = max(lines * live, max(edge, endEdge));
   }
   writeGBuffer(col, refl, (viewMatrix * vec4(nOut, 0.0)).xyz, emis);
@@ -138,6 +150,55 @@ function tubeIndex(n) {
   return idx;
 }
 
+// half-pipe: PIPE_N lateral vertices per sample (flat floor + quarter-pipe walls)
+const PIPE_N = 21;
+function pipeIndex(n) {
+  const idx = [];
+  for (let i = 0; i < n - 1; i++) for (let j = 0; j < PIPE_N - 1; j++) {
+    const a = i * PIPE_N + j, b = (i + 1) * PIPE_N + j;
+    idx.push(a, b, a + 1, a + 1, b, b + 1);
+  }
+  return idx;
+}
+
+// boost pads (forward chevrons) and side-wind jets (sideways chevrons) painted on the deck
+const DECAL_VS = /* glsl */`
+attribute vec2 aKind; // kind (0 boost, ±1 jet direction), length (m)
+varying vec2 vUv; varying vec2 vKind;
+void main(){ vUv = uv; vKind = aKind; gl_Position = projectionMatrix * viewMatrix * modelMatrix * instanceMatrix * vec4(position, 1.0); }`;
+const DECAL_FS = /* glsl */`
+varying vec2 vUv; varying vec2 vKind;
+void main(){
+  float t = uTime;
+  vec3 col; float m;
+  if (abs(vKind.x) < 0.5) {   // boost: bright forward chevrons racing ahead
+    float v = vUv.y * vKind.y / 1.2 + t * 3.0;
+    float ch = fract(v + abs(vUv.x - 0.5) * 1.4);
+    m = smoothstep(0.55, 0.62, ch) * (1.0 - smoothstep(0.85, 0.92, ch));
+    col = mix(vec3(1.0, 0.85, 0.15), vec3(0.2, 1.0, 1.0), vUv.y) * 7.0;
+  } else {                    // jet: sideways chevrons in the push direction
+    float x = (vKind.x > 0.0 ? vUv.x : 1.0 - vUv.x) * 4.0 - t * 2.5;
+    float ch = fract(x + abs(fract(vUv.y * vKind.y / 3.0) - 0.5) * 1.2);
+    m = smoothstep(0.55, 0.62, ch) * (1.0 - smoothstep(0.85, 0.92, ch)) * 0.8;
+    col = vec3(0.3, 0.75, 1.0) * 4.0;
+  }
+  if (m < 0.02) discard;
+  writeGBuffer(col * m, 0.0, vec3(0.0, 0.0, 1.0), m);
+}`;
+const SHARD_VS = /* glsl */`
+varying vec3 vN; varying vec3 vWorld;
+void main(){
+  float a = uTime * 2.2 + instanceMatrix[3][2] * 0.3; float c = cos(a), s = sin(a);
+  vec3 p = vec3(position.x * c - position.z * s, position.y + sin(uTime * 3.0 + instanceMatrix[3][2]) * 0.08, position.x * s + position.z * c);
+  vN = vec3(normal.x * c - normal.z * s, normal.y, normal.x * s + normal.z * c);
+  vec4 wp = modelMatrix * instanceMatrix * vec4(p, 1.0); vWorld = wp.xyz;
+  gl_Position = projectionMatrix * viewMatrix * wp;
+}`;
+const SHARD_FS = /* glsl */`
+varying vec3 vN; varying vec3 vWorld;
+void main(){ vec3 n = normalize(vN); float f = pow(1.0 - abs(dot(n, normalize(uCamPos - vWorld))), 2.0);
+  vec3 col = vec3(1.0, 0.85, 0.25) * (2.0 + f * 6.0); writeGBuffer(col, 0.0, (viewMatrix * vec4(n, 0.0)).xyz, 1.0); }`;
+
 export class CourseView {
   constructor(scene, obstacleScene, shared, course) {
     this.scene = scene; this.course = course;
@@ -145,7 +206,7 @@ export class CourseView {
     const u = { ...shared, uRunTime: this.uRunTime };
     this.deckMat = worldMaterial({ uniforms: u, vertexShader: DECK_VS, fragmentShader: DECK_FS, side: THREE.DoubleSide });
     this.tubeMat = worldMaterial({ uniforms: u, vertexShader: TUBE_VS, fragmentShader: TUBE_FS, side: THREE.DoubleSide });
-    this.free = { deck: [], tube: [] };
+    this.free = { deck: [], tube: [], pipe: [] };
     this.live = new Map(); // chunk → [PooledMesh]
     this.maxBoxes = 600;
     this.obst = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), worldMaterial({
@@ -155,18 +216,29 @@ export class CourseView {
     obstacleScene.add(this.obst);
     this.boxes = []; this.m = new THREE.Matrix4(); this.q = new THREE.Quaternion(); this.e = new THREE.Euler(0, 0, 0, 'YZX');
     this.p = new THREE.Vector3(); this.sc = new THREE.Vector3();
+    // decals (boost pads + jets) and shards: one instanced draw each
+    const dg = new THREE.PlaneGeometry(1, 1); dg.rotateX(-Math.PI / 2); dg.translate(0, 0, -0.5);
+    this.decalAttr = new Float32Array(128 * 2);
+    dg.setAttribute('aKind', new THREE.InstancedBufferAttribute(this.decalAttr, 2));
+    this.decals = new THREE.InstancedMesh(dg, worldMaterial({ uniforms: { ...shared }, vertexShader: DECAL_VS, fragmentShader: DECAL_FS, side: THREE.DoubleSide }), 128);
+    this.decals.frustumCulled = false; this.decals.count = 0; scene.add(this.decals);
+    this.shardMesh = new THREE.InstancedMesh(new THREE.OctahedronGeometry(0.32), worldMaterial({ uniforms: { ...shared }, vertexShader: SHARD_VS, fragmentShader: SHARD_FS }), 256);
+    this.shardMesh.frustumCulled = false; this.shardMesh.count = 0; scene.add(this.shardMesh);
+    this.g = {}; this.P = {};
     course.on('add', (c) => this.addChunk(c));
     course.on('remove', (c) => this.removeChunk(c));
   }
 
-  get materials() { return [this.deckMat, this.tubeMat, this.obst.material]; }
+  get materials() { return [this.deckMat, this.tubeMat, this.obst.material, this.decals.material, this.shardMesh.material]; }
 
   take(kind) {
     let pm = this.free[kind].pop();
     if (!pm) {
       pm = kind === 'deck'
         ? new PooledMesh(this.deckMat, 6, deckIndex, { position: 3, normal: 3, aDeck: 4, aSide: 1, aRot: 4, aPivot: 2 })
-        : new PooledMesh(this.tubeMat, TUBE_VERTS, tubeIndex, { position: 3, normal: 3, aTube: 2, aRot: 4, aPivot: 2 });
+        : kind === 'pipe'
+          ? new PooledMesh(this.deckMat, PIPE_N, pipeIndex, { position: 3, normal: 3, aDeck: 4, aSide: 1, aRot: 4, aPivot: 2 })
+          : new PooledMesh(this.tubeMat, TUBE_VERTS, tubeIndex, { position: 3, normal: 3, aTube: 2, aRot: 4, aPivot: 2 });
       pm.kind = kind;
     }
     this.scene.add(pm.mesh);
@@ -176,15 +248,54 @@ export class CourseView {
   addChunk(chunk) {
     const list = [];
     for (const pl of chunk.platforms) {
-      list.push(this.buildDeck(pl));
+      list.push(pl.pipe ? this.buildPipe(pl) : this.buildDeck(pl));
       if (pl.tunnel) list.push(this.buildTube(pl));
     }
     this.live.set(chunk, list);
+    this.rebuildDecals();
   }
 
   removeChunk(chunk) {
     for (const pm of this.live.get(chunk) || []) { this.scene.remove(pm.mesh); this.free[pm.kind].push(pm); }
     this.live.delete(chunk);
+    this.rebuildDecals();
+  }
+
+  buildPipe(pl) {
+    const pm = this.take('pipe'), A = pm.attrs;
+    const n = Math.min(pl.n, MAX_SAMPLES);
+    for (let i = 0; i < n; i++) {
+      const z = pl.z0 - i * DZ, cx = pl.cx[i], cy = pl.cy[i], hw = pl.hw[i], env = pl.bank[i];
+      for (let j = 0; j < PIPE_N; j++) {
+        // denser vertices toward the walls, where the curve is
+        const t = j / (PIPE_N - 1) * 2 - 1, u = Math.sign(t) * Math.pow(Math.abs(t), 0.7) * hw;
+        const p = pipeProfile(u, env), nl = Math.hypot(p.dh, 1), v = i * PIPE_N + j;
+        A.position.setXYZ(v, cx + u, cy + p.h, z); A.normal.setXYZ(v, -p.dh / nl, 1 / nl, 0);
+        A.aDeck.setXYZW(v, u, hw, i * DZ, 1e3); A.aSide.setX(v, 0);
+        A.aRot.setXYZW(v, 0, 0, 0, 0);
+      }
+    }
+    pm.commit(n);
+    return pm;
+  }
+
+  rebuildDecals() {
+    let k = 0;
+    const put = (pl, zA, len, kind) => {
+      if (k >= 128) return;
+      const s = pl.sample(zA, {}), s2 = pl.sample(zA - len, {});
+      const pitch = Math.atan2(s.cy - s2.cy, len);
+      this.e.set(-pitch, 0, 0, 'XYZ');
+      this.m.compose(this.p.set(s.cx, s.cy + 0.04, zA), this.q.setFromEuler(this.e), this.sc.set(s.hw * 2 - 0.2, 1, len));
+      this.decals.setMatrixAt(k, this.m); this.decalAttr.set([kind, len], k * 2); k++;
+    };
+    for (const c of this.course.chunks) for (const pl of c.platforms) {
+      for (const pz of pl.pads) put(pl, pz + 0.5, 4, 0);
+      for (const j of pl.jets) put(pl, j.zA, j.zA - j.zB, Math.sign(j.a));
+    }
+    this.e.set(0, 0, 0, 'YZX');
+    this.decals.count = k;
+    this.decals.instanceMatrix.needsUpdate = true; this.decals.geometry.attributes.aKind.needsUpdate = true;
   }
 
   buildDeck(pl) {
@@ -205,6 +316,8 @@ export class CourseView {
         A.position.setXYZ(v + k, x, y, z); A.normal.setXYZ(v + k, nnx, nny, 0);
         A.aDeck.setXYZW(v + k, uu, hw, sAlong, dOpen); A.aSide.setX(v + k, side);
         if (rot) { A.aRot.setXYZW(v + k, rot.amp, rot.omega, rot.phase, 0); A.aPivot.setXY(v + k, cx, cy + hc); }
+        else if (pl.slide) A.aRot.setXYZW(v + k, pl.slide.amp, pl.slide.omega, pl.slide.phase, 1);
+        else if (pl.blink) A.aRot.setXYZW(v + k, 1, pl.blink.omega, pl.blink.phase, 2 + pl.blink.duty);
         else A.aRot.setXYZW(v + k, 0, 0, 0, 0);
       };
       set(0, lx, ly, nx, ny, -hw, 0); set(1, rx, ry, nx, ny, hw, 0);
@@ -257,6 +370,17 @@ export class CourseView {
       }
     }
     this.obst.count = k;
+    // shards (positions follow shuttles; taken ones disappear)
+    let n = 0;
+    for (const c of this.course.chunks) {
+      if (!c.shards || c.zEnd > ballZ + 20 || c.zStart < ballZ - 320) continue;
+      for (const sh of c.shards) {
+        if (sh.taken || n >= 256) continue;
+        const g = sh.pl.geo(sh.z, t, this.g), P = sh.pl.point(sh.u, g, this.P);
+        this.m.makeTranslation(P.x, P.y + 0.8, sh.z); this.shardMesh.setMatrixAt(n++, this.m);
+      }
+    }
+    this.shardMesh.count = n; this.shardMesh.instanceMatrix.needsUpdate = true;
     this.obst.instanceMatrix.needsUpdate = true;
   }
 }

@@ -142,3 +142,13 @@ Audio, menus beyond the death summary, leaderboards, cosmetics.
 - **A4 Tunnels** are octagonal in section. Floating wireframe cubes drift beside the track (visual only).
 - **A5 Curves.** The ball follows the deck heading and feels 10% of the centrifugal pull. Curvature is clamped at 1/25 m.
 - **A6 Modes.** Title screen, pause menu, Autoplay (model-predictive autopilot; runs never count toward bests), and a light-cycle vehicle that is visual only, with the same physics and collision sphere as the ball.
+- **A7 Strip chains.** 3–5 strips 3 m wide, each ending in a lip that jumps you onto the next.
+- **A8 Half-pipe tunnels.** Open-roofed, with quarter-pipe ramp walls. Ride up a wall; past the lip you launch straight up and drop back in.
+- **A9 Boost pads.** Full-width pads in tunnels: +22 m/s surge decaying over ~1.6 s, plus a permanent +4 m/s.
+- **A10 Kicker ramps.** Sized to the predicted speed for ~0.8–1.1 s of air, with a run-out covering the whole flight. No obstacles on them.
+- **A11 Blink tiles.** Short deck tiles that switch off and on, flashing red just before they vanish. Each is phased to be solid around the predicted crossing.
+- **A12 Shuttle platforms.** Deck sections sliding side to side over the void; you ride with them.
+- **A13 Side-wind jets.** Zones on straights that push you sideways at 14–24 m/s².
+- **A14 Shards.** Gold pickups worth +10 score.
+- **A15 Triple pistons + laser fences.** Three deck-spanning blocks rising and falling out of phase, and thin beams that pulse on and off.
+- **A16 Steeper banks** (~1 in 4: 28–38°). **No obstacles on winding or thin strips.**

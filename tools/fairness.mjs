@@ -12,7 +12,7 @@ import { Wind } from '../src/world/wind.js';
 globalThis.addEventListener ??= () => {};
 const shared = createShared(new Wind());
 const STEP = 1 / 120, SEGS = [-1, 0, 1], DEEP = !!process.env.DEEP;
-const F = ['x', 'y', 'z', 'u', 'vu', 'speed', 'vx', 'vy', 'grounded', 'pl', 'dead', 'deathCause', 'runTime', 'dist', 'bank'];
+const F = ['x', 'y', 'z', 'u', 'vu', 'speed', 'boost', 'vx', 'vy', 'grounded', 'pl', 'dead', 'deathCause', 'runTime', 'dist', 'bank'];
 const plans = [];
 for (const a of SEGS) for (const b of SEGS) for (const c of SEGS) { if (DEEP) for (const d of SEGS) plans.push([a, b, c, d]); else plans.push([a, b, c]); }
 const [segT, horizon] = DEEP ? [0.25, 2.0] : [0.3, 1.5];
@@ -36,6 +36,7 @@ for (let k = 1; k <= (ONLY ? 1 : N); k++) {
   const seed = ONLY ?? ((k * 2654435761) >>> 0);
   const course = new Course(); course.reset(seed);
   const ball = new Ball(new THREE.Scene(), shared, course), sim = new Ball(new THREE.Scene(), shared, course);
+  sim.isSim = true;
   let t = 0, acc = 1, plan = [0];
   while (t < LIMIT && !ball.dead) {
     if ((acc += STEP) >= 1 / 15) { acc = 0; let best = -1; for (const p of plans) { const sc = rollout(sim, ball, p); if (sc > best) { best = sc; plan = p; } } }

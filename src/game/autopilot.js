@@ -10,13 +10,14 @@ const SEGS = [-1, 0, 1];
 const PLANS = [];
 for (const a of SEGS) for (const b of SEGS) for (const c of SEGS) PLANS.push([a, b, c]);
 const SEG_T = 0.3, HORIZON = 1.5, SIM_DT = 1 / 120;
-const FIELDS = ['x', 'y', 'z', 'u', 'vu', 'speed', 'vx', 'vy', 'grounded', 'pl', 'dead', 'deathCause', 'runTime', 'dist', 'bank'];
+const FIELDS = ['x', 'y', 'z', 'u', 'vu', 'speed', 'boost', 'vx', 'vy', 'grounded', 'pl', 'dead', 'deathCause', 'runTime', 'dist', 'bank'];
 
 export class Autopilot {
   constructor(shared, course) {
     this.course = course;
     this.sim = new Ball(new THREE.Scene(), shared, course); // never rendered
     this.sim.mesh.visible = false;
+    this.sim.isSim = true;
     this.snap = {};
     this.plan = [0]; this.planT = 0;
     this.next = 0; this.best = -1; this.bestPlan = PLANS[13];
