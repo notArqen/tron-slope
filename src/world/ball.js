@@ -52,6 +52,9 @@ export class Ball {
   }
 
   reset() {
+    // drop any held steering: the title-screen autopilot injects synthetic key presses
+    // that never get a keyup, so a fresh run would otherwise inherit a stuck ← or →
+    this.keys.clear();
     this.x = 0; this.z = 0; this.u = 0; this.vu = 0;
     this.speed = V_MIN; this.minSpeed = V_MIN; this.maxSpeed = V_MAX;
     this.vx = 0; this.vy = 0;
