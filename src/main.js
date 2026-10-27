@@ -358,8 +358,11 @@ function frame(now) {
   const target = tmpV.set(ball.x, ball.y + 2.6 - landDip, ball.z + 7.2);
   // feel: lateral follow stays tight, height eases (jumps read as air, not a glued camera)
   camPos.x += (target.x - camPos.x) * (1 - Math.exp(-dt * 6));
-  camPos.y += (target.y - camPos.y) * (1 - Math.exp(-dt * 6)); // one constant rate: switching rates on takeoff/landing caused snaps
-  lookY += (ball.y - 0.6 - lookY) * (1 - Math.exp(-dt * 7));   // smoothed aim height (pinning it to the ball jerked the view)
+  // vertical follow: tight, with a little lead along the ball's vertical velocity so long
+  // drops stay framed (a loose follow left the ball sinking to the bottom of the screen)
+  const vLead = Math.max(-3, Math.min(1.5, (ball.grounded ? 0 : ball.vy) * 0.08));
+  camPos.y += (target.y + vLead - camPos.y) * (1 - Math.exp(-dt * 12));
+  lookY += (ball.y - 0.6 + vLead - lookY) * (1 - Math.exp(-dt * 14));   // smoothed aim height (pinning it to the ball jerked the view)
   camPos.z = target.z;
   camera.position.copy(camPos);
   let shake = 0;
