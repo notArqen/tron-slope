@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { worldMaterial } from './shared.js';
-import { BALL_R, G, STEER_ACC, STEER_DAMP, V_MIN, V_MAX, CENTRIFUGAL, accelAt, crestLaunch, BOOST_ADD, BOOST_KEEP, BOOST_TAU, PIPE_F, PIPE_R, PIPE_LAUNCH } from '../game/course.js';
+import { BALL_R, G, STEER_ACC, STEER_DAMP, V_MIN, V_MAX, CENTRIFUGAL, accelAt, vmaxAt, crestLaunch, BOOST_ADD, BOOST_KEEP, BOOST_TAU, PIPE_F, PIPE_R, PIPE_LAUNCH } from '../game/course.js';
 
 export { BALL_R };
 
@@ -97,10 +97,11 @@ export class Ball {
       // deck slope behind and ahead (probes continue past platform ends)
       const hB = pl.heightAt(this.z + 1), h0 = pl.heightAt(this.z), hF = pl.heightAt(this.z - 1);
       const slopeTan = hB - h0, slopeAhead = h0 - hF;
-      this.speed = Math.max(V_MIN, Math.min(V_MAX, this.speed + accelAt(this.speed, slopeTan) * dt));
+      const vmax = vmaxAt(this.z);
+      this.speed = Math.max(V_MIN, Math.min(vmax, this.speed + accelAt(this.speed, slopeTan, vmax) * dt));
       // boost pads: surge that decays + small permanent gain (Course.step mirrors this)
       const nz = this.z - vt * dt;
-      for (const pz of pl.pads) if (this.z > pz && nz <= pz) { this.speed = Math.min(V_MAX, this.speed + BOOST_KEEP); this.boost += BOOST_ADD; this.boosted = 0.6; }
+      for (const pz of pl.pads) if (this.z > pz && nz <= pz) { this.speed = Math.min(vmaxAt(this.z), this.speed + BOOST_KEEP); this.boost += BOOST_ADD; this.boosted = 0.6; }
       this.z = nz;
       this.dist += vt * dt;
 
@@ -142,7 +143,8 @@ export class Ball {
       this.vy -= G * dt;
       // weak, floaty air control: ~10% of ground steering, lagged so it feels vague
       this.airIn = (this.airIn || 0) + (this.input - (this.airIn || 0)) * Math.min(1, dt * 4);
-      this.vx += this.airIn * STEER_ACC * 0.2 * dt; // owner: a bit more air control
+      // air control scales with speed: barely any when slow, up to ~35% of ground steering when fast
+      this.vx += this.airIn * STEER_ACC * (0.06 + 0.29 * Math.min(1, this.speedN)) * dt;
       this.y += this.vy * dt;
       this.x += this.vx * dt;
       this.airT += dt;

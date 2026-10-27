@@ -43,8 +43,10 @@ export function pipeProfile(u, e) {
   return { h: (PIPE_R - root) * e, dh: (q / root) * Math.sign(u) * e };
 }
 
-export function accelAt(v, slopeTan) {
-  let a = K_ACC * (1 - v / V_MAX);
+// top speed keeps creeping up the further you get: +1 m/s per 100 m, capped at 150
+export const vmaxAt = (z) => Math.min(150, V_MAX + Math.max(0, -z) / 100);
+export function accelAt(v, slopeTan, vmax = V_MAX) {
+  let a = K_ACC * (1 - v / vmax);
   if (slopeTan > TAN_STEEP) a += 2.5; else if (slopeTan < TAN_FLAT) a -= 3;
   return a;
 }
@@ -374,7 +376,7 @@ export class Course {
   step(chunk, slopeTan, air = false, boost = false) {
     const c = this.cur;
     // boost pad: big surge that decays, plus a small permanent gain (same rule as Ball.step)
-    if (boost && !air) { c.v = Math.min(V_MAX, c.v + BOOST_KEEP); c.boost = (c.boost || 0) + BOOST_ADD; }
+    if (boost && !air) { c.v = Math.min(vmaxAt(c.z), c.v + BOOST_KEEP); c.boost = (c.boost || 0) + BOOST_ADD; }
     const vt = c.v + (c.boost || 0);
     const dt = DZ / vt;
     if (c.boost) { c.boost *= Math.exp(-dt / BOOST_TAU); if (c.boost < 0.05) c.boost = 0; }
@@ -393,7 +395,7 @@ export class Course {
       c.lastSlope = slopeTan;
     }
     // the ball spawns at z = 0 with V_MIN: no acceleration on the runway behind the spawn
-    if (!air && !flying && c.z <= 0) c.v = Math.max(V_MIN, Math.min(V_MAX, c.v + accelAt(c.v, slopeTan) * dt));
+    if (!air && !flying && c.z <= 0) c.v = Math.max(V_MIN, Math.min(vmaxAt(c.z), c.v + accelAt(c.v, slopeTan, vmaxAt(c.z)) * dt));
     c.t += dt; c.z -= DZ;
     if (!air) c.cy -= DZ * slopeTan;
     chunk.steps.push({ z: c.z, t: c.t, v: vt, air: air || flying, cy: c.cy });
