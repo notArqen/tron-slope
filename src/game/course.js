@@ -183,7 +183,11 @@ export function obstacleBoxes(o, t, out) {
     case 'lasers': {
       // thin vertical beams across the deck, each pulsing on/off on its own phase
       for (let i = 0; i < o.n; i++) {
-        if (Math.sin(ph + o.offs[i]) > 0.15) put(-s.hw + (2 * s.hw) * (i + 0.5) / o.n, 1.3, 0.05, 1.3, 0.05);
+        const u = -s.hw + (2 * s.hw) * (i + 0.5) / o.n;
+        // emitter pad + header always visible (visual only), so you can read where beams fire
+        put(u, 0.06, 0.22, 0.06, 0.22, 0, true);
+        put(u, 2.66, 0.22, 0.06, 0.22, 0, true);
+        if (Math.sin(ph + o.offs[i]) > 0.15) put(u, 1.33, 0.12, 1.27, 0.12);
       }
       break;
     }
