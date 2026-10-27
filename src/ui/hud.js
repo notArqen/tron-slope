@@ -27,6 +27,8 @@ export class Hud {
     this.sum = document.getElementById('summary');
     this.sumScore = this.sum.querySelector('.s-score');
     this.sumStats = this.sum.querySelector('.s-stats');
+    this.sumCause = this.sum.querySelector('.s-cause');
+    this.sumRun = this.sum.querySelector('.s-run');
     this.sumSeed = this.sum.querySelector('input');
     this.sum.querySelector('form').addEventListener('submit', (e) => { e.preventDefault(); this.onSeedSubmit && this.onSeedSubmit(this.sumSeed.value); this.sumSeed.blur(); });
     // manual and autoplay keep separate high scores (overall + per seed)
@@ -69,8 +71,8 @@ export class Hud {
     this.speedEl.textContent = `${(speed * 3.6).toFixed(0)} km/h`;
   }
 
-  crash(score, seedStr, cause) {
-    this.last = { score, cause, newBest: false, newSeedBest: false };
+  crash(score, seedStr, cause, stats = {}) {
+    this.last = { score, cause, newBest: false, newSeedBest: false, ...stats };
     if (!this.tainted) {
       const B = this.S[this.mode];
       if (score > B.best) { B.best = score; this.last.newBest = true; save(B.keys[0], score); }
@@ -91,6 +93,11 @@ export class Hud {
     this.sumScore.innerHTML = String(l.score).split('').map(digitSVG).join('');
     const sb = this.bySeed[this.seedStr] || 0;
     this.sumStats.innerHTML = `<span>best <b>${this.best}</b>${l.newBest ? ' <i>new</i>' : ''}</span><span>this seed <b>${sb}</b>${l.newSeedBest && !l.newBest ? ' <i>new</i>' : ''}</span>${this.tainted ? '<span class="dim">no-death run · not counted</span>' : this.mode === 'auto' ? '<span class="dim">autoplay board</span>' : ''}`;
+    // how the run went: cause, distance, top speed, time
+    const how = { hit: 'hit an obstacle', wall: 'hit the tunnel wall', fell: 'fell off the track' }[l.cause] || 'crashed';
+    const mm = Math.floor((l.time || 0) / 60), ss = String(Math.floor((l.time || 0) % 60)).padStart(2, '0');
+    this.sumCause.textContent = how;
+    this.sumRun.innerHTML = `<span><b>${Math.round(l.dist || 0)}</b> m</span><span>top <b>${Math.round((l.top || 0) * 3.6)}</b> km/h</span><span><b>${mm}:${ss}</b></span>`;
     this.sumSeed.value = this.seedStr;
     this.sum.hidden = false;
   }

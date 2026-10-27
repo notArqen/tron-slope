@@ -196,3 +196,7 @@ body.in-menu #hud { display: none; }
 #hud .score { transition: transform 220ms var(--ease-out), filter 220ms var(--ease-out); }
 #hud .score.pulse { transform: translateX(-50%) scale(1.12); filter: brightness(1.8); transition-duration: 60ms; }
 @media (prefers-reduced-motion: reduce) { #hud .score.pulse { transform: translateX(-50%); } }
+#summary .s-cause { font-size: 12px; letter-spacing: 0.35em; text-transform: uppercase; color: #ff6a5c; text-shadow: 0 0 10px rgba(255, 80, 60, 0.6); }
+#summary .s-run { display: flex; gap: 16px; font-size: 12px; color: rgba(255, 255, 255, 0.55); font-variant-numeric: tabular-nums; }
+#summary .s-run b { color: #fff; font-weight: 600; }
+#summary { border-color: rgba(255, 106, 92, 0.3); box-shadow: 0 0 60px rgba(255, 60, 40, 0.12), inset 0 0 0 1px rgba(255, 255, 255, 0.03); }

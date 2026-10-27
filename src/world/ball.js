@@ -142,7 +142,7 @@ export class Ball {
       this.vy -= G * dt;
       // weak, floaty air control: ~10% of ground steering, lagged so it feels vague
       this.airIn = (this.airIn || 0) + (this.input - (this.airIn || 0)) * Math.min(1, dt * 4);
-      this.vx += this.airIn * STEER_ACC * 0.1 * dt;
+      this.vx += this.airIn * STEER_ACC * 0.2 * dt; // owner: a bit more air control
       this.y += this.vy * dt;
       this.x += this.vx * dt;
       this.airT += dt;

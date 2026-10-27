@@ -102,7 +102,7 @@ const overlay = new Overlay(settings, perf, { probe: (key) => startProbe(key) })
 // ---------------------------------------------------------------- sizing / dynamic resolution
 let dynScale = 1, dynCooldown = 0, camRoll = 0;
 let idleFrameDone = false;
-let lookY = 0, heldBank = 0, surgeT = 0, landDip = 0, boostPunch = 0, lastHundred = 0; // feel: landing dip, boost jolt, score milestones // paused: draw once, then stop until something changes
+let topSpeed = 0, lookY = 0, heldBank = 0, surgeT = 0, landDip = 0, boostPunch = 0, lastHundred = 0; // feel: landing dip, boost jolt, score milestones // paused: draw once, then stop until something changes
 function internalSize() {
   const dpr = Math.min(devicePixelRatio || 1, S.maxDpr);
   const cw = innerWidth, ch = innerHeight;
@@ -183,7 +183,7 @@ function startRun(newSeed, { attract = false } = {}) {
   city.reset(0); dys.reset(0); floaters.reset(0); cycle.reset();
   pipeline.historyValid = false;
   camPos.set(0, ball.y + 2.6, 7.2); lookY = ball.y - 0.6; heldBank = 0;
-  deathT = -1; acc = 0; lastHundred = 0;
+  deathT = -1; acc = 0; lastHundred = 0; topSpeed = 0;
   phase = attract ? 'menu' : 'run';
   if (!attract) { tracks.played(seed); menu.hideTitle(); menu.hidePause(); hud.startRun(seedToString(seed)); hud.setAutoplay(autoplay); autopilot.reset(); }
 }
@@ -218,7 +218,7 @@ function die(cause) {
   // shatter into grid shards
   particles.shardColor.copy(shared.uNeon.value);
   particles.emit('shard', ball.mesh.position, new THREE.Vector3(ball.vx || 0, 0, -ball.speed), 60);
-  hud.crash(score(), seedToString(seed), cause);
+  hud.crash(score(), seedToString(seed), cause, { dist: ball.dist, top: topSpeed, time: ball.runTime });
 }
 
 function stepSim(dt) {
@@ -294,6 +294,7 @@ function frame(now) {
   if ((phase === 'run' && autoplay) || phase === 'menu') autopilot.think(ball, simDt);
   while (acc >= STEP) { if (phase === 'run' || phase === 'menu') stepSim(STEP); acc -= STEP; }
   ball.sync();
+  if (phase === 'run') topSpeed = Math.max(topSpeed, ball.vt);
   // feel: hard landings dip the camera, shake it, and spark; boosts punch the FOV
   if (ball.landed) {
     landDip = Math.max(landDip, ball.landed * 0.6); shakeImpact = Math.max(shakeImpact, ball.landed * 0.35);

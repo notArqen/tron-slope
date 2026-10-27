@@ -143,6 +143,7 @@ export function obstacleBoxes(o, t, out) {
     return ++n;
   };
   const ph = o.omega * t + o.phase;
+  const moveZ = (b, z) => { b.y += pl.heightAt(z) - pl.heightAt(b.z); b.z = z; }; // slide along the slope, stay on the deck
   switch (o.type) {
     case 'block': put(o.u, o.h / 2, o.w / 2, o.h / 2, o.d / 2); break;
     case 'wall': {
@@ -205,11 +206,11 @@ export function obstacleBoxes(o, t, out) {
     }
     case 'zipper': {         // block shuttling along the track toward you and away
       const n = put(o.u, o.h / 2, o.w / 2, o.h / 2, 0.6);
-      out[n - 1].z = o.z + o.amp * Math.sin(ph);
+      moveZ(out[n - 1], o.z + o.amp * Math.sin(ph));
       break;
     }
     case 'orbiters': {       // two blocks circling a point on the deck
-      for (let i = 0; i < 2; i++) { const a = ph + i * Math.PI; const k = put(o.u + Math.cos(a) * o.rad, 0.5, 0.45, 0.5, 0.45); out[k - 1].z = o.z + Math.sin(a) * o.rad; }
+      for (let i = 0; i < 2; i++) { const a = ph + i * Math.PI; const k = put(o.u + Math.cos(a) * o.rad, 0.5, 0.45, 0.5, 0.45); moveZ(out[k - 1], o.z + Math.sin(a) * o.rad); }
       break;
     }
     case 'wave': {           // pillar row rising in a travelling wave: the gap moves across
@@ -220,8 +221,8 @@ export function obstacleBoxes(o, t, out) {
       break;
     }
     case 'slalom': {         // staggered static blocks: weave through
-      const n = put(o.u, 0.7, 0.7, 0.7, 0.45); out[n - 1].z = o.z;
-      const m = put(-o.u, 0.7, 0.7, 0.7, 0.45); out[m - 1].z = o.z - o.gapZ;
+      put(o.u, 0.7, 0.7, 0.7, 0.45);
+      const m = put(-o.u, 0.7, 0.7, 0.7, 0.45); moveZ(out[m - 1], o.z - o.gapZ);
       break;
     }
     case 'twinrotor': {      // two counter-rotating crosses side by side
@@ -259,6 +260,7 @@ const TYPES = [
   { id: 'winding', d: 0.25, w: 3 },
   { id: 'halfpipe', d: 0.3, w: 1.8 }, { id: 'strips', d: 0.4, w: 1.6 },
   { id: 'kicker', d: 0.15, w: 1.6 },
+  { id: 'twister', d: 0.25, w: 1.4 }, { id: 'funnel', d: 0.1, w: 1.4 }, { id: 'holes', d: 0.3, w: 1.3 },
   { id: 'megajump', d: 0.3, w: 1.2 }, { id: 'stairs', d: 0.2, w: 1.4 }, { id: 'islands', d: 0.45, w: 1.3 },
   { id: 'coaster', d: 0.2, w: 1.5 }, { id: 'corkscrew', d: 0.35, w: 1.3 }, { id: 'fork', d: 0.3, w: 1.3 }, { id: 'blink', d: 0.35, w: 1.4 }, { id: 'shuttle', d: 0.5, w: 1.3 },
   { id: 'rottunnel', d: 0.75, w: 1.2 },
@@ -682,6 +684,46 @@ export class Course {
         this.run(chunk, post, 10, (k, dist, L) => ({ hw: ease(2.2, 3.5, dist, L) }));
         break;
       }
+      case 'twister': {
+        // open deck that rolls side to side like the twisting tunnels, minus the tube
+        const pre = deck(); const w0 = c.hw;
+        this.run(chunk, pre, 8, (k, dist, L) => ({ hw: ease(w0, 3.5, dist, L) }));
+        const rot = { amp: r.range(10, 18 + 6 * d) * DEG, omega: (2 * Math.PI) / r.range(2.6, 4), phase: r.range(0, 6.28) };
+        const p = deck({ rot });
+        this.run(chunk, p, r.range(60, 110), () => ({ hw: 3.5 }));
+        if (d >= 0.4) this.placeObstacles(chunk, p, d, ['block'], 1.5);
+        const post = deck(); this.run(chunk, post, 8, () => ({ hw: 3.5 }));
+        break;
+      }
+      case 'funnel': {
+        // hourglass: full width pinches to a neck and opens back up
+        const len = r.range(60, 95), neck = r.range(1.3, 1.7), w0 = c.hw;
+        const p = deck();
+        this.run(chunk, p, len, (k, dist, L) => ({ hw: lerp(lerp(w0, 3.5, smooth(dist / 8)), neck, Math.pow(Math.sin(Math.PI * k), 2)) }));
+        if (d >= 0.3) this.placeObstacles(chunk, p, d, ['block'], 1.6);
+        break;
+      }
+      case 'holes': {
+        // hole grid: rows of tiles in three columns, each row missing one column
+        const pre = deck(); const w0 = c.hw;
+        this.run(chunk, pre, 10, (k, dist, L) => ({ hw: ease(w0, 3.5, dist, L) }));
+        const rows = r.int(5, 8), colW = 7 / 3, cx = c.cx;
+        let lastMissing = -1;
+        for (let row = 0; row < rows; row++) {
+          let miss = r.int(0, 2); if (miss === lastMissing) miss = (miss + 1 + r.int(0, 1)) % 3; lastMissing = miss;
+          // contiguous spans of present columns become one platform each
+          const spans = miss === 0 ? [[1, 2]] : miss === 2 ? [[0, 1]] : [[0, 0], [2, 2]];
+          const tiles = spans.map(([a, b]) => { const t = new Platform('deck', c.z); t.openStart = t.openEnd = true; t.entrySlope = c.lastSlope; t.span = [a, b]; chunk.platforms.push(t); return t; });
+          const n = Math.round(r.range(7, 10) / DZ);
+          for (let i = 0; i <= n; i++) {
+            for (const t of tiles) { const [a, b] = t.span, mid = (a + b) / 2 - 1; t.push(cx + mid * colW, c.cy, ((b - a + 1) * colW) / 2 - 0.05, 0); }
+            if (i < n) this.step(chunk, this.baseSlope());
+          }
+        }
+        c.hw = 3.5;
+        const post = deck(); post.openStart = true; this.run(chunk, post, 10, () => ({ hw: 3.5 }));
+        break;
+      }
       case 'megajump': {
         // big launch ramp over a void onto a lower deck
         const A = deck();
@@ -719,8 +761,18 @@ export class Course {
         const n = r.int(3, 5), lam = r.range(30, 45), len = n * lam, w0 = c.hw, kv = (2 * Math.PI) / lam;
         const H = Math.min(3, (r.range(1.4, 1.8) * G) / (c.v * c.v) / (kv * kv));
         const p = deck();
-        this.run(chunk, p, len, (k, dist) => ({ hw: ease(w0, 3.5, dist, len), slope: this.baseSlope() + H * kv * Math.sin(kv * dist) * smooth(dist / lam) }));
+        // sometimes a boost pad just before a crest for a bigger hop
+        const padAt = d >= 0.2 && r() < 0.5 ? lam * r.int(1, n - 1) - lam * 0.3 : -1; let padDone = false;
+        this.run(chunk, p, len, (k, dist) => {
+          const hit = !padDone && padAt > 0 && dist >= padAt; if (hit) { p.pads.push(c.z); padDone = true; }
+          return { hw: ease(w0, 3.5, dist, len), slope: this.baseSlope() + H * kv * Math.sin(kv * dist) * smooth(dist / lam), boost: hit };
+        });
         this.run(chunk, p, 15, () => ({}));
+        // blocks in the troughs only: never under an airborne stretch (you'd clip them mid-hop)
+        const nObs = chunk.obstacles.length;
+        this.placeObstacles(chunk, p, Math.max(d, 0.35), ['block', 'slider'], 0.7);
+        const air = chunk.steps.filter((s) => s.air).map((s) => s.z);
+        chunk.obstacles.splice(nObs, chunk.obstacles.length - nObs, ...chunk.obstacles.slice(nObs).filter((o) => !air.some((z) => Math.abs(z - o.z) < 4)));
         break;
       }
       case 'corkscrew': {

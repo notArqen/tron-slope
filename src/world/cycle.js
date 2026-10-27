@@ -123,7 +123,7 @@ export class LightCycle {
 
   update(ball, dt, visible, alive) {
     this.group.visible = visible && alive;
-    this.trail.visible = visible;
+    this.trail.visible = visible && alive; // the light wall goes with the bike
     if (!visible) return;
     const vel = ball.vel, sp = Math.hypot(vel.x, vel.z);
     if (dt > 0 && sp > 0.5) {
