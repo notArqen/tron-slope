@@ -64,6 +64,7 @@ class Platform {
     this.rot = opts.rot || null; // { amp, omega, phase }
     this.openStart = !!opts.openStart; this.openEnd = false;
     this.lip = false;
+    this.deadly = !!opts.deadly; // red tunnel: wall contact kills
     this.pipe = !!opts.pipe;   // half-pipe: bank[] holds the wall envelope instead of a bank angle
     this.pads = [];            // boost pad start z values
     this.slide = opts.slide || null;  // { amp, omega, phase } shuttle: deck slides sideways
@@ -261,7 +262,7 @@ const TYPES = [
   { id: 'thin', d: 0.45, w: 2 }, { id: 'split', d: 0.45, w: 1.4 },
   { id: 'winding', d: 0.25, w: 3 },
   { id: 'halfpipe', d: 0.3, w: 1.8 }, { id: 'strips', d: 0.4, w: 1.6 },
-  { id: 'kicker', d: 0.15, w: 1.6 },
+  { id: 'kicker', d: 0.15, w: 1.6 }, { id: 'redtunnel', d: 0.3, w: 1.4 },
   { id: 'twister', d: 0.25, w: 1.4 }, { id: 'funnel', d: 0.1, w: 1.4 }, { id: 'holes', d: 0.3, w: 1.3 },
   { id: 'megajump', d: 0.3, w: 1.2 }, { id: 'stairs', d: 0.2, w: 1.4 }, { id: 'islands', d: 0.45, w: 1.3 },
   { id: 'coaster', d: 0.2, w: 1.5 }, { id: 'corkscrew', d: 0.35, w: 1.3 }, { id: 'fork', d: 0.3, w: 1.3 }, { id: 'blink', d: 0.35, w: 1.4 }, { id: 'shuttle', d: 0.5, w: 1.3 },
@@ -815,6 +816,15 @@ export class Course {
         c.hw = 3.5;
         const post = deck();
         this.run(chunk, post, 8, () => ({ hw: 3.5 }));
+        break;
+      }
+      case 'redtunnel': {
+        // rectangular tunnel with hazard-red walls: unlike normal tunnels, touching a wall kills
+        const pre = deck(); const w0 = c.hw;
+        this.run(chunk, pre, 10, (k, dist, L) => ({ hw: ease(w0, 3.5, dist, L) }));
+        const p = deck({ tunnel: true, deadly: true });
+        this.run(chunk, p, r.range(50, 100), () => ({ hw: 3.5 }));
+        if (d >= 0.35) this.placeObstacles(chunk, p, d, ['block', 'slider'], 1.2);
         break;
       }
       case 'tunnel':

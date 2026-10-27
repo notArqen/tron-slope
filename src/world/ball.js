@@ -127,7 +127,9 @@ export class Ball {
         const nlen = Math.hypot(P.slope, 1);
         this.x = P.x - (P.slope / nlen) * BALL_R * (cur.pipe ? 1 : 0); this.y = P.y + BALL_R / (cur.pipe ? nlen : 1);
         if (cur.tunnel && Math.abs(this.u) > g2.hw - BALL_R) {
-          if (godMode) { this.u = Math.sign(this.u) * (g2.hw - BALL_R); this.vu = 0; } else this.kill('wall');
+          // normal tunnels: solid walls you can ride along; red tunnels: touching the wall kills
+          if (cur.deadly && !godMode) this.kill('wall');
+          else { this.u = Math.sign(this.u) * (g2.hw - BALL_R); if (this.u * this.vu > 0) this.vu = 0; }
         }
       } else {
         // leave the deck: off the side, off a lip, over a crest, out of a pipe, or a tile vanished

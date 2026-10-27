@@ -204,12 +204,15 @@ function toMenu() {
   menu.showTitle(hud.S.manual.best, hud.S.auto.best);
 }
 
-function pause() {
+let quickPaused = false;
+function pause(quick = false) {
   if (phase !== 'run') return;
-  phase = 'paused'; ball.keys.clear(); idleFrameDone = false;
-  menu.showPause(seedToString(seed), autoplay, tracks.isSaved(seed));
+  phase = 'paused'; ball.keys.clear(); idleFrameDone = false; quickPaused = quick;
+  // Space: quick pause, just the word on screen; Esc/P: the full pause menu
+  if (quick) hud.msgEl.textContent = 'paused', hud.msgEl.className = 'msg newbest';
+  else menu.showPause(seedToString(seed), autoplay, tracks.isSaved(seed));
 }
-function resume() { if (phase === 'paused') { phase = 'run'; menu.hidePause(); } }
+function resume() { if (phase === 'paused') { phase = 'run'; menu.hidePause(); if (quickPaused) { hud.msgEl.textContent = ''; quickPaused = false; } } }
 
 function die(cause) {
   if (deathT >= 0) return;
@@ -241,6 +244,8 @@ menu.setVehicle(S.vehicle);
 const overlayOpen = () => !document.getElementById('overlay').hidden;
 addEventListener('keydown', (e) => {
   if (e.defaultPrevented || overlayOpen() || e.target.closest?.('#overlay, #summary input, #menu input')) return;
+  if (phase === 'run' && e.code === 'Space') { e.preventDefault(); pause(true); return; }
+  if (phase === 'paused' && quickPaused && (e.code === 'Space' || e.code === 'Escape')) { e.preventDefault(); resume(); return; }
   if (phase === 'run' && (e.code === 'Escape' || e.code === 'KeyP')) { e.preventDefault(); pause(); return; }
   if (phase === 'paused' && (e.code === 'Escape' || e.code === 'KeyP')) { e.preventDefault(); resume(); return; }
   // Autoplay: steering keys take the wheel back

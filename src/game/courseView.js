@@ -13,7 +13,7 @@ const TUBE_H = 5;
 const ROT_VS = /* glsl */`
 attribute vec4 aRot;    // amp, omega, phase, kind (0 roll, 1 shuttle slide, 2+duty blink)
 attribute vec2 aPivot;  // rotation pivot (x, y) for rotating tunnels
-uniform float uRunTime;
+uniform float uRunTime; uniform float uRed;
 float blinkWarn = 0.0;
 vec3 rotDeck(vec3 p){
   if (aRot.x == 0.0) return p;
@@ -94,6 +94,7 @@ void main(){
   gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
 }`;
 const TUBE_FS = /* glsl */`
+uniform float uRed;
 varying vec3 vWorld; varying vec3 vNormalW; varying vec2 vTube;
 void main(){
   vec3 n = normalize(vNormalW);
@@ -101,7 +102,8 @@ void main(){
   float live = neonLive(vec2(floor(vTube.x / 3.0), floor(vTube.y / 14.0)), uTime);
   float surge = uSurge * surgePulse(vTube.y * 3.0, uTime * 1.6, floor(vTube.x) * 0.37);
   vec3 base = vec3(0.006, 0.007, 0.009);
-  vec3 col = base * (0.4 + poolLight(vWorld, n)) + uNeon * (max(ring, rib) * 1.6 * live * mix(0.35, 1.0, uPower) + surge * rib * 5.0);
+  vec3 tc = mix(uNeon, uNeon2, uRed);
+  vec3 col = base * (0.4 + poolLight(vWorld, n)) + tc * (max(ring, rib) * 1.6 * live * mix(0.35, 1.0, uPower) + surge * rib * 5.0);
   writeGBuffer(col, 0.05, (viewMatrix * vec4(n, 0.0)).xyz, max(ring, rib) * live);
 }`;
 
@@ -137,6 +139,8 @@ function deckIndex(n) {
   return idx;
 }
 // octagonal tunnel section (the deck is the floor face); 7 faces × 2 verts per ring
+// red tunnels: same vertex layout, rectangular (8 points / 7 faces)
+const RECT = (hw) => [[-hw, 0], [-hw, TUBE_H / 2], [-hw, TUBE_H], [-hw / 3, TUBE_H], [hw / 3, TUBE_H], [hw, TUBE_H], [hw, TUBE_H / 2], [hw, 0]];
 const OCT = (hw) => { const c = 1.7; return [[-hw, 0], [-hw - c, c], [-hw - c, TUBE_H - c], [-hw, TUBE_H], [hw, TUBE_H], [hw + c, TUBE_H - c], [hw + c, c], [hw, 0]]; };
 const TUBE_VERTS = 14;
 function tubeIndex(n) {
@@ -191,8 +195,9 @@ export class CourseView {
     this.uRunTime = { value: 0 };
     const u = { ...shared, uRunTime: this.uRunTime };
     this.deckMat = worldMaterial({ uniforms: u, vertexShader: DECK_VS, fragmentShader: DECK_FS, side: THREE.DoubleSide });
-    this.tubeMat = worldMaterial({ uniforms: u, vertexShader: TUBE_VS, fragmentShader: TUBE_FS, side: THREE.DoubleSide });
-    this.free = { deck: [], tube: [], pipe: [] };
+    this.tubeMat = worldMaterial({ uniforms: { ...u, uRed: { value: 0 } }, vertexShader: TUBE_VS, fragmentShader: TUBE_FS, side: THREE.DoubleSide });
+    this.redMat = worldMaterial({ uniforms: { ...u, uRed: { value: 1 } }, vertexShader: TUBE_VS, fragmentShader: TUBE_FS, side: THREE.DoubleSide });
+    this.free = { deck: [], tube: [], pipe: [], red: [] };
     this.live = new Map(); // chunk → [PooledMesh]
     this.maxBoxes = 600;
     this.obst = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), worldMaterial({
@@ -213,7 +218,7 @@ export class CourseView {
     course.on('remove', (c) => this.removeChunk(c));
   }
 
-  get materials() { return [this.deckMat, this.tubeMat, this.obst.material, this.decals.material]; }
+  get materials() { return [this.deckMat, this.tubeMat, this.redMat, this.obst.material, this.decals.material]; }
 
   take(kind) {
     let pm = this.free[kind].pop();
@@ -222,7 +227,7 @@ export class CourseView {
         ? new PooledMesh(this.deckMat, 6, deckIndex, { position: 3, normal: 3, aDeck: 4, aSide: 1, aRot: 4, aPivot: 2 })
         : kind === 'pipe'
           ? new PooledMesh(this.deckMat, PIPE_N, pipeIndex, { position: 3, normal: 3, aDeck: 4, aSide: 1, aRot: 4, aPivot: 2 })
-          : new PooledMesh(this.tubeMat, TUBE_VERTS, tubeIndex, { position: 3, normal: 3, aTube: 2, aRot: 4, aPivot: 2 });
+          : new PooledMesh(kind === 'red' ? this.redMat : this.tubeMat, TUBE_VERTS, tubeIndex, { position: 3, normal: 3, aTube: 2, aRot: 4, aPivot: 2 });
       pm.kind = kind;
     }
     this.scene.add(pm.mesh);
@@ -233,7 +238,7 @@ export class CourseView {
     const list = [];
     for (const pl of chunk.platforms) {
       list.push(pl.pipe ? this.buildPipe(pl) : this.buildDeck(pl));
-      if (pl.tunnel) list.push(this.buildTube(pl));
+      if (pl.tunnel) list.push(this.buildTube(pl, pl.deadly));
     }
     this.live.set(chunk, list);
     this.rebuildDecals();
@@ -313,13 +318,13 @@ export class CourseView {
     return pm;
   }
 
-  buildTube(pl) {
-    const pm = this.take('tube'), A = pm.attrs;
+  buildTube(pl, red = false) {
+    const pm = this.take(red ? 'red' : 'tube'), A = pm.attrs;
     const n = Math.min(pl.n, MAX_SAMPLES), rot = pl.rot;
     for (let i = 0; i < n; i++) {
       const z = pl.z0 - i * DZ, cx = pl.cx[i], cy = pl.cy[i], hw = pl.hw[i] + 0.02;
       const v = i * TUBE_VERTS, sAlong = i * DZ;
-      const pts = OCT(hw);
+      const pts = red ? RECT(hw) : OCT(hw);
       let per = 0;
       for (let f = 0; f < 7; f++) {
         const [x0, y0] = pts[f], [x1, y1] = pts[f + 1];
