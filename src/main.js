@@ -12,6 +12,7 @@ import { CourseView } from './game/courseView.js';
 import { seedToString, parseSeed, randomSeed } from './game/rng.js';
 import { Hud } from './ui/hud.js';
 import { Menu } from './ui/menu.js';
+import { Tracks } from './ui/tracks.js';
 import { Autopilot } from './game/autopilot.js';
 import { City } from './world/city.js';
 import { Sky } from './world/sky.js';
@@ -92,7 +93,8 @@ for (const mtl of [...courseView.materials, ...cycle.materials]) if (!worldMater
 
 // ---------------------------------------------------------------- HUD + scores
 const hud = new Hud();
-const score = () => Math.floor(ball.dist / 4) + ball.bonus; // distance + shard pickups
+const tracks = new Tracks();
+const score = () => Math.floor(ball.dist / 4);
 
 // ---------------------------------------------------------------- overlay
 const overlay = new Overlay(settings, perf, { probe: (key) => startProbe(key) });
@@ -181,7 +183,7 @@ function startRun(newSeed, { attract = false } = {}) {
   camPos.set(0, ball.y + 2.6, 7.2);
   deathT = -1; acc = 0;
   phase = attract ? 'menu' : 'run';
-  if (!attract) { menu.hideTitle(); menu.hidePause(); hud.startRun(seedToString(seed)); hud.setAutoplay(autoplay); autopilot.reset(); }
+  if (!attract) { tracks.played(seed); menu.hideTitle(); menu.hidePause(); hud.startRun(seedToString(seed)); hud.setAutoplay(autoplay); autopilot.reset(); }
 }
 
 function setAutoplay(on) {
@@ -196,13 +198,14 @@ function toMenu() {
   document.getElementById('summary').hidden = true;
   history.replaceState(null, '', location.pathname);
   startRun(randomSeed(), { attract: true });
+  menu.renderTracks(tracks, seedToString, (s) => hud.bySeed[seedToString(s)] || 0);
   menu.showTitle(hud.best);
 }
 
 function pause() {
   if (phase !== 'run') return;
   phase = 'paused'; ball.keys.clear(); idleFrameDone = false;
-  menu.showPause(seedToString(seed), autoplay);
+  menu.showPause(seedToString(seed), autoplay, tracks.isSaved(seed));
 }
 function resume() { if (phase === 'paused') { phase = 'run'; menu.hidePause(); } }
 
@@ -227,6 +230,7 @@ const menu = new Menu({
   autoplay: (d) => { autoplay = true; playD = d; startRun(randomSeed()); },
   toggleAutoplay: () => { setAutoplay(!autoplay); menu.setAutoLabel(autoplay); },
   vehicle: (v) => settings.set('vehicle', v),
+  saveTrack: () => menu.setSaveLabel(tracks.toggleSave(seed)),
   settings: () => overlay.toggle(true),
   resume, restart: () => startRun(seed), newSeed: () => startRun(randomSeed()), quit: toMenu,
 });
@@ -247,6 +251,11 @@ addEventListener('keydown', (e) => {
 // leaving the tab mid-run pauses it
 addEventListener('blur', () => pause());
 document.addEventListener('visibilitychange', () => { if (document.hidden) pause(); });
+// summary: save / unsave the track you just died on
+const sSave = document.querySelector('#summary .s-save');
+sSave.onclick = () => { const on = tracks.toggleSave(seed); sSave.textContent = on ? '★ saved' : 'save track'; sSave.classList.toggle('on', on); };
+const _showSummary = hud.showSummary.bind(hud);
+hud.showSummary = () => { _showSummary(); const on = tracks.isSaved(seed); sSave.textContent = on ? '★ saved' : 'save track'; sSave.classList.toggle('on', on); };
 hud.onSeedSubmit = (txt) => { const s = parseSeed(txt); if (s !== null) startRun(s); };
 
 // ---------------------------------------------------------------- main loop
@@ -328,8 +337,9 @@ function frame(now) {
   // camera: chase cam with FOV kick + shake
   const sp = ball.speedN;
   course.centreAt(ball.z, ctr);
-  const cxAhead = course.centreAt(ball.z - 14, {}).cx;
-  const target = tmpV.set(ball.x * 0.6 + ctr.cx * 0.4, ball.y + 2.6, ball.z + 7.2);
+  // look further down the curve, and follow the track line more than the ball
+  const cxAhead = course.centreAt(ball.z - 22, {}).cx;
+  const target = tmpV.set(ball.x * 0.5 + ctr.cx * 0.5, ball.y + 2.6, ball.z + 7.2);
   camPos.lerp(target, 1 - Math.exp(-dt * 10));
   camPos.z = target.z; // never lag behind along the run
   camera.position.copy(camPos);
@@ -337,7 +347,7 @@ function frame(now) {
   if (S.shake) shake = S.shakeAmt * (sp * 0.02 + weather.lightningFlash * 0.03 * (S.lightning ? 1 : 0) + shakeImpact * 0.25);
   camera.position.x += (Math.sin(simTime * 37.1) + Math.sin(simTime * 23.3)) * shake;
   camera.position.y += (Math.sin(simTime * 41.7) + Math.sin(simTime * 19.9)) * shake;
-  camLook.set(ball.x * 0.6 + cxAhead * 0.4, ball.y - 0.6, ball.z - 14);
+  camLook.set(ball.x * 0.4 + cxAhead * 0.6, ball.y - 0.6, ball.z - 18);
   camera.lookAt(camLook);
   // roll with the deck bank (max 12°)
   camRoll += ((ball.grounded ? -ball.bank : 0) * 0.55 - camRoll) * (1 - Math.exp(-dt * 6));
@@ -410,4 +420,4 @@ function frame(now) {
 requestAnimationFrame(frame);
 
 // expose for debugging / automated perf checks
-window.__tron = { settings, perf, pipeline, ball, weather, track, layers, camera, course, hud, menu, startRun, toMenu, pause, resume, get phase() { return phase; }, get dynScale() { return dynScale; } };
+window.__tron = { settings, perf, pipeline, city, ball, weather, track, layers, camera, course, hud, menu, startRun, toMenu, pause, resume, get phase() { return phase; }, get dynScale() { return dynScale; } };

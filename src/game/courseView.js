@@ -185,20 +185,6 @@ void main(){
   if (m < 0.02) discard;
   writeGBuffer(col * m, 0.0, vec3(0.0, 0.0, 1.0), m);
 }`;
-const SHARD_VS = /* glsl */`
-varying vec3 vN; varying vec3 vWorld;
-void main(){
-  float a = uTime * 2.2 + instanceMatrix[3][2] * 0.3; float c = cos(a), s = sin(a);
-  vec3 p = vec3(position.x * c - position.z * s, position.y + sin(uTime * 3.0 + instanceMatrix[3][2]) * 0.08, position.x * s + position.z * c);
-  vN = vec3(normal.x * c - normal.z * s, normal.y, normal.x * s + normal.z * c);
-  vec4 wp = modelMatrix * instanceMatrix * vec4(p, 1.0); vWorld = wp.xyz;
-  gl_Position = projectionMatrix * viewMatrix * wp;
-}`;
-const SHARD_FS = /* glsl */`
-varying vec3 vN; varying vec3 vWorld;
-void main(){ vec3 n = normalize(vN); float f = pow(1.0 - abs(dot(n, normalize(uCamPos - vWorld))), 2.0);
-  vec3 col = vec3(1.0, 0.85, 0.25) * (2.0 + f * 6.0); writeGBuffer(col, 0.0, (viewMatrix * vec4(n, 0.0)).xyz, 1.0); }`;
-
 export class CourseView {
   constructor(scene, obstacleScene, shared, course) {
     this.scene = scene; this.course = course;
@@ -216,20 +202,18 @@ export class CourseView {
     obstacleScene.add(this.obst);
     this.boxes = []; this.m = new THREE.Matrix4(); this.q = new THREE.Quaternion(); this.e = new THREE.Euler(0, 0, 0, 'YZX');
     this.p = new THREE.Vector3(); this.sc = new THREE.Vector3();
-    // decals (boost pads + jets) and shards: one instanced draw each
+    // decals (boost pads + jets): one instanced draw
     const dg = new THREE.PlaneGeometry(1, 1); dg.rotateX(-Math.PI / 2); dg.translate(0, 0, -0.5);
     this.decalAttr = new Float32Array(128 * 2);
     dg.setAttribute('aKind', new THREE.InstancedBufferAttribute(this.decalAttr, 2));
     this.decals = new THREE.InstancedMesh(dg, worldMaterial({ uniforms: { ...shared }, vertexShader: DECAL_VS, fragmentShader: DECAL_FS, side: THREE.DoubleSide }), 128);
     this.decals.frustumCulled = false; this.decals.count = 0; scene.add(this.decals);
-    this.shardMesh = new THREE.InstancedMesh(new THREE.OctahedronGeometry(0.32), worldMaterial({ uniforms: { ...shared }, vertexShader: SHARD_VS, fragmentShader: SHARD_FS }), 256);
-    this.shardMesh.frustumCulled = false; this.shardMesh.count = 0; scene.add(this.shardMesh);
     this.g = {}; this.P = {};
     course.on('add', (c) => this.addChunk(c));
     course.on('remove', (c) => this.removeChunk(c));
   }
 
-  get materials() { return [this.deckMat, this.tubeMat, this.obst.material, this.decals.material, this.shardMesh.material]; }
+  get materials() { return [this.deckMat, this.tubeMat, this.obst.material, this.decals.material]; }
 
   take(kind) {
     let pm = this.free[kind].pop();
@@ -307,7 +291,8 @@ export class CourseView {
       const c = Math.cos(th), s = Math.sin(th);
       // deck surface rotated about (cx, cy + hc)
       const P = (u, down) => [cx + u * c + hc * s + down * s, cy + hc + u * s - hc * c - down * c];
-      const [lx, ly] = P(-hw, 0), [rx, ry] = P(hw, 0), [lbx, lby] = P(-hw, LIP), [rbx, rby] = P(hw, LIP);
+      const lip = pl.wall ? pl.wall[i] : LIP; // ramps/roofs: side walls reach down to the deck
+      const [lx, ly] = P(-hw, 0), [rx, ry] = P(hw, 0), [lbx, lby] = P(-hw, lip), [rbx, rby] = P(hw, lip);
       const nx = -s, ny = c; // top normal
       const sAlong = i * DZ;
       const dOpen = Math.min(pl.openStart ? sAlong : 1e3, pl.openEnd ? len - sAlong : 1e3);
@@ -370,17 +355,7 @@ export class CourseView {
       }
     }
     this.obst.count = k;
-    // shards (positions follow shuttles; taken ones disappear)
-    let n = 0;
-    for (const c of this.course.chunks) {
-      if (!c.shards || c.zEnd > ballZ + 20 || c.zStart < ballZ - 320) continue;
-      for (const sh of c.shards) {
-        if (sh.taken || n >= 256) continue;
-        const g = sh.pl.geo(sh.z, t, this.g), P = sh.pl.point(sh.u, g, this.P);
-        this.m.makeTranslation(P.x, P.y + 0.8, sh.z); this.shardMesh.setMatrixAt(n++, this.m);
-      }
-    }
-    this.shardMesh.count = n; this.shardMesh.instanceMatrix.needsUpdate = true;
+
     this.obst.instanceMatrix.needsUpdate = true;
   }
 }

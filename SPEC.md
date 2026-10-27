@@ -149,6 +149,14 @@ Audio, menus beyond the death summary, leaderboards, cosmetics.
 - **A11 Blink tiles.** Short deck tiles that switch off and on, flashing red just before they vanish. Each is phased to be solid around the predicted crossing.
 - **A12 Shuttle platforms.** Deck sections sliding side to side over the void; you ride with them.
 - **A13 Side-wind jets.** Zones on straights that push you sideways at 14–24 m/s².
-- **A14 Shards.** Gold pickups worth +10 score.
+- **A14 Shards.** Removed (owner: same rules every run, only the track changes). Score is distance only.
 - **A15 Triple pistons + laser fences.** Three deck-spanning blocks rising and falling out of phase, and thin beams that pulse on and off.
 - **A16 Steeper banks** (~1 in 4: 28–38°). **No obstacles on winding or thin strips.**
+- **A17 New obstacles.** Crusher (slab, slow lift / fast slam), sweeper (low arm swinging from an edge post), zipper (block shuttling along the track), orbiters (two blocks circling), wave pillars (a travelling gap), slalom (staggered blocks), twin rotors.
+- **A18 New track pieces.** Mega jump (big launch ramp over a void), stairs (run of short drops), island hop (zig-zag pads with lips), rollercoaster (speed-sized crests), corkscrew (bank sweeps ±24–34°), fork (two wide lanes drift apart and rejoin).
+- **A19 Optional ramps.** Side kicker ramps on straights, plus ramps up to ridable tunnel roofs. They are never required, so the validator ignores them.
+- **A20 Weak air control.** About 10% of ground steering, lagged. The validator still assumes zero, so it stays conservative.
+- **A21 Banked curves.** Thin and winding curves bank into the bend to cancel ~80% of the outward push.
+- **A22 Biomes.** City styles cycle every ~900 m of distance: grid → glass → brutalist → industrial → void. The sequence is fixed, not per seed.
+- **A23 Track library.** The last 5 distinct seeds are kept automatically, and up to 20 can be saved. Both live in localStorage and show on the title screen.
+- **No power-ups, no pickups.** Owner decision.

@@ -180,3 +180,15 @@ body.in-menu #hud { display: none; }
 #pause button { width: 220px; padding: 9px 14px; }
 #hud .auto { position: absolute; top: 104px; left: 50%; transform: translateX(-50%); font-size: 11px; letter-spacing: 0.22em; color: #3dff5c; opacity: 0.85; white-space: nowrap; }
 #hud .auto[hidden] { display: none; }
+
+/* ---------------- track library chips (title screen) */
+.m-tracks { display: flex; flex-direction: column; align-items: center; gap: 6px; margin-top: 4px; font-size: 11px; color: rgba(255, 255, 255, 0.45); }
+.m-tracks .row { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; align-items: center; max-width: 520px; }
+.m-tracks .lbl { letter-spacing: 0.2em; text-transform: uppercase; margin-right: 2px; }
+.m-tracks button { font: inherit; font-size: 11px; letter-spacing: 0.06em; color: #d9f5de; background: rgba(0, 4, 2, 0.72); border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 6px; padding: 3px 8px; cursor: pointer; transition: transform 120ms var(--ease-out), border-color 150ms ease; }
+.m-tracks button.saved { border-color: rgba(255, 200, 60, 0.6); color: #ffd56a; }
+.m-tracks button:active { transform: scale(0.97); }
+.m-tracks button:focus-visible { outline: none; border-color: #3dff5c; }
+@media (hover: hover) and (pointer: fine) { .m-tracks button:hover { border-color: rgba(61, 255, 92, 0.5); } }
+#summary .s-save { font: inherit; font-size: 12px; color: #ffd56a; background: transparent; border: 1px solid rgba(255, 200, 60, 0.5); border-radius: 6px; padding: 5px 10px; cursor: pointer; }
+#summary .s-save.on { background: rgba(255, 200, 60, 0.15); }

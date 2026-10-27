@@ -74,6 +74,17 @@ export class Menu {
     }
   }
 
+  // recent + saved seeds as clickable chips
+  renderTracks(tracks, fmt, bestFor) {
+    const box = this.title.querySelector('.m-tracks');
+    const chip = (s, saved) => `<button type="button" data-seed="${fmt(s)}" class="${saved ? 'saved' : ''}" title="play this track">${saved ? '★ ' : ''}${fmt(s)}${bestFor(s) ? ' · ' + bestFor(s) : ''}</button>`;
+    const rows = [];
+    if (tracks.saved.length) rows.push(`<div class="row"><span class="lbl">saved</span>${tracks.saved.map((s) => chip(s, true)).join('')}</div>`);
+    if (tracks.recent.length) rows.push(`<div class="row"><span class="lbl">recent</span>${tracks.recent.map((s) => chip(s, tracks.isSaved(s))).join('')}</div>`);
+    box.innerHTML = rows.join('');
+    for (const b of box.querySelectorAll('button')) b.onclick = () => this.h.play(b.dataset.seed, this.startD());
+  }
+
   showTitle(best) {
     this.title.querySelector('.m-best').textContent = best ? `best ${best}` : '';
     this.title.hidden = false;
@@ -85,8 +96,10 @@ export class Menu {
     document.body.classList.remove('in-menu');
     this.title.classList.remove('first');
   }
-  showPause(seed, auto) {
+  setSaveLabel(on) { this.pause.querySelector('.p-save').textContent = on ? '★ Saved' : 'Save track'; }
+  showPause(seed, auto, saved) {
     this.pause.querySelector('.p-seed').textContent = `seed ${seed}`;
+    this.setSaveLabel(saved);
     this.setAutoLabel(auto);
     this.pause.hidden = false;
     this.pause.querySelector('[data-act="resume"]').focus({ preventScroll: true });

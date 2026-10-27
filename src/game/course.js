@@ -133,14 +133,14 @@ export function obstacleBoxes(o, t, out) {
   const pl = o.pl, s = pl.geo(o.z, t, o._s || (o._s = {}));   // includes shuttle slide + tunnel roll
   const hc = pl.pivot, th = s.th;
   let n = 0;
-  const put = (u, yUp, hx, hy, hz, yaw = 0, ghost = false) => {
+  const put = (u, yUp, hx, hy, hz, yaw = 0, ghost = false) => { // returns the new box count
     // place in deck space then rotate with the deck (tunnels / banks)
     const c = Math.cos(th), sn = Math.sin(th);
     const lx = u, ly = -hc + yUp;               // relative to pivot
     const b = out[n] = box(out[n]);
     b.x = s.cx + lx * c - ly * sn; b.y = s.cy + hc + lx * sn + ly * c; b.z = o.z;
     b.hx = hx; b.hy = hy; b.hz = hz; b.yaw = yaw; b.roll = th; b.ghost = ghost;
-    n++;
+    return ++n;
   };
   const ph = o.omega * t + o.phase;
   switch (o.type) {
@@ -187,6 +187,43 @@ export function obstacleBoxes(o, t, out) {
       }
       break;
     }
+    case 'crusher': {        // heavy slab over half the deck: slow lift, fast slam
+      const f = ((ph / (2 * Math.PI)) % 1 + 1) % 1, lift = f < 0.7 ? f / 0.7 : 1 - (f - 0.7) / 0.08;
+      put(o.side * s.hw / 2, 0.9 + 3.2 * Math.max(0, Math.min(1, lift)), s.hw / 2 - 0.05, 0.9, 0.9);
+      break;
+    }
+    case 'sweeper': {        // low arm on an edge post sweeping across the deck
+      const a = o.side * (0.5 + 0.5 * Math.sin(ph)) * Math.PI * 0.5;
+      const L = s.hw * 1.6, cxu = o.side * -s.hw;
+      put(cxu + (-o.side) * Math.cos(a) * L / 2, 0.45, L / 2, 0.22, 0.18, -o.side * a);
+      put(cxu, 1.0, 0.18, 1.0, 0.18, 0, true);
+      break;
+    }
+    case 'zipper': {         // block shuttling along the track toward you and away
+      const n = put(o.u, o.h / 2, o.w / 2, o.h / 2, 0.6);
+      out[n - 1].z = o.z + o.amp * Math.sin(ph);
+      break;
+    }
+    case 'orbiters': {       // two blocks circling a point on the deck
+      for (let i = 0; i < 2; i++) { const a = ph + i * Math.PI; const k = put(o.u + Math.cos(a) * o.rad, 0.5, 0.45, 0.5, 0.45); out[k - 1].z = o.z + Math.sin(a) * o.rad; }
+      break;
+    }
+    case 'wave': {           // pillar row rising in a travelling wave: the gap moves across
+      for (let i = 0; i < o.n; i++) {
+        const h = 2.4 * Math.max(0, Math.min(1, Math.sin(ph - i * o.k) * 1.4 + 0.3));
+        if (h > 0.05) put(-s.hw + (2 * s.hw) * (i + 0.5) / o.n, h / 2, s.hw / o.n - 0.05, h / 2, 0.35);
+      }
+      break;
+    }
+    case 'slalom': {         // staggered static blocks: weave through
+      const n = put(o.u, 0.7, 0.7, 0.7, 0.45); out[n - 1].z = o.z;
+      const m = put(-o.u, 0.7, 0.7, 0.7, 0.45); out[m - 1].z = o.z - o.gapZ;
+      break;
+    }
+    case 'twinrotor': {      // two counter-rotating crosses side by side
+      for (const sd of [-1, 1]) { const yaw = sd * o.rate * t + o.phase; put(sd * s.hw / 2, 0.5, s.hw / 2 * 0.85, 0.3, 0.2, yaw); put(sd * s.hw / 2, 0.5, s.hw / 2 * 0.85, 0.3, 0.2, yaw + Math.PI / 2); }
+      break;
+    }
     case 'fin': {
       const side = o.side, L = o.len;
       put(side * (s.hw - L / 2), o.h / 2, L / 2, o.h / 2, 0.2);
@@ -213,12 +250,16 @@ const TYPES = [
   { id: 'thin', d: 0.45, w: 2 }, { id: 'split', d: 0.45, w: 1.4 },
   { id: 'winding', d: 0.25, w: 3 },
   { id: 'halfpipe', d: 0.3, w: 1.8 }, { id: 'strips', d: 0.4, w: 1.6 },
-  { id: 'kicker', d: 0.15, w: 1.6 }, { id: 'blink', d: 0.35, w: 1.4 }, { id: 'shuttle', d: 0.5, w: 1.3 },
+  { id: 'kicker', d: 0.15, w: 1.6 },
+  { id: 'megajump', d: 0.3, w: 1.2 }, { id: 'stairs', d: 0.2, w: 1.4 }, { id: 'islands', d: 0.45, w: 1.3 },
+  { id: 'coaster', d: 0.2, w: 1.5 }, { id: 'corkscrew', d: 0.35, w: 1.3 }, { id: 'fork', d: 0.3, w: 1.3 }, { id: 'blink', d: 0.35, w: 1.4 }, { id: 'shuttle', d: 0.5, w: 1.3 },
   { id: 'rottunnel', d: 0.75, w: 1.2 },
 ];
 const OBSTACLES = [
   { id: 'block', d: 0, w: 3 }, { id: 'wall', d: 0.1, w: 2 }, { id: 'slider', d: 0.3, w: 2 },
-  { id: 'gate', d: 0.45, w: 1.5 }, { id: 'pistons', d: 0.4, w: 2.4 }, { id: 'lasers', d: 0.35, w: 2.2 }, { id: 'pendulum', d: 0.6, w: 1.3 }, { id: 'rotor', d: 0.6, w: 1.2 },
+  { id: 'gate', d: 0.45, w: 1.5 }, { id: 'pistons', d: 0.4, w: 2.4 }, { id: 'lasers', d: 0.35, w: 2.2 },
+  { id: 'crusher', d: 0.3, w: 2 }, { id: 'sweeper', d: 0.35, w: 1.8 }, { id: 'zipper', d: 0.25, w: 1.8 }, { id: 'orbiters', d: 0.45, w: 1.6 },
+  { id: 'wave', d: 0.5, w: 1.8 }, { id: 'slalom', d: 0.15, w: 2 }, { id: 'twinrotor', d: 0.6, w: 1.4 }, { id: 'pendulum', d: 0.6, w: 1.3 }, { id: 'rotor', d: 0.6, w: 1.2 },
 ];
 
 export class Course {
@@ -373,14 +414,40 @@ export class Course {
     const ease = (from, to, dist, len) => lerp(from, to, smooth(dist / Math.min(8, len)));
     const deck = (opts) => { const p = new Platform('deck', c.z, opts); chunk.platforms.push(p); return p; };
     // take-off run ending in a +6° lip
-    const lipTan = Math.tan(Math.atan(SLOPE_TAN) - 6 * DEG);
-    const lipRun = (pl, len, hw) => {
+    let lipTan = Math.tan(Math.atan(SLOPE_TAN) - 6 * DEG);
+    const lipRun = (pl, len, hw, kick = 6) => {
       const w0 = c.hw;
+      lipTan = Math.tan(Math.atan(SLOPE_TAN) - kick * DEG);
       this.run(chunk, pl, len, (k, dist, L) => ({ hw: ease(w0, hw, dist, L), slope: dist > L - 4 ? lipTan : undefined }));
       pl.lip = true; pl.openEnd = true;
     };
+    // superelevation: tilt a curved deck into its bends so the bank cancels ~80% of the
+    // outward push (G·sinθ = 0.8·C·v²κ) — curves feel like roads, not conveyor belts
+    const autoBank = (pl, i0) => {
+      const n = pl.cx.length, st = chunk.steps;
+      for (let i = 1; i < n - 1; i++) {
+        const kappa = (pl.cx[i + 1] - 2 * pl.cx[i] + pl.cx[i - 1]) / (DZ * DZ);
+        const v = (st[Math.min(st.length - 1, i0 + i)] || st[st.length - 1]).v;
+        const sn = Math.max(-0.45, Math.min(0.45, (-0.8 * CENTRIFUGAL * v * v * Math.max(-KAPPA_MAX, Math.min(KAPPA_MAX, kappa))) / G));
+        pl.bank[i] += Math.asin(sn);
+      }
+    };
+    // optional side ramp riding on an existing deck: rises from flush to H over [iA, iB]
+    // samples, then ends in a lip (shape 'kick' launches up, 'flat' levels off to sail onto a roof)
+    const ramp = (base, iA, iB, side, H, shape = 'kick', rhw = 1.2) => {
+      const p = new Platform('ramp', base.z0 - iA * DZ); p.optional = true; p.openEnd = true; p.lip = true;
+      p.wall = [];
+      for (let i = iA; i <= iB; i++) {
+        const k = (i - iA) / (iB - iA), h = shape === 'flat' ? H * smooth(k) : H * Math.pow(k, 1.6);
+        p.push(base.cx[i] + side * Math.max(0, base.hw[i] - rhw), base.cy[i] + h, rhw, 0);
+        p.wall.push(h + 0.05);
+      }
+      p.entrySlope = base.cy[iA] - base.cy[iA + 1];
+      chunk.platforms.push(p);
+      return p;
+    };
     // ballistic flight off the lip onto a new lower platform B (optionally ending in its own lip)
-    const fly = ({ drop, reach: f, hwB, lenB, lipLen = 0, offMax = 1.5 }) => {
+    const fly = ({ drop, reach: f, hwB, lenB, lipLen = 0, offMax = 1.5, offset = null, kick = 6 }) => {
       const v = c.v + (c.boost || 0), th = Math.atan(lipTan);
       const vy0 = -v * Math.sin(th) / Math.cos(th);
       const tReach = (vy0 + Math.sqrt(vy0 * vy0 + 2 * G * drop)) / G;
@@ -397,11 +464,11 @@ export class Course {
       for (let i = 0; i < nAir; i++) { this.step(chunk, 0, true); chunk.steps[chunk.steps.length - 1].cy = lerp(cyAir0, yLip - drop, (i + 1) / nAir); }
       c.cy = yLip - drop;
       c.lastSlope = undefined; c.fly = false;
-      c.cx += r.range(-1, 1) * Math.min(offMax, VLAT * (landX / v) * 0.7 * 0.3);
+      c.cx += offset ?? r.range(-1, 1) * Math.min(offMax, VLAT * (landX / v) * 0.7 * 0.3);
       c.hw = hwB;
       const B = deck({ openStart: true });
       const landRun = Math.max(lenB, (landX - gapLen) + (lipLen ? 6 : 14));
-      if (lipLen) lipRun(B, landRun + lipLen, hwB);
+      if (lipLen) lipRun(B, landRun + lipLen, hwB, kick);
       else this.run(chunk, B, landRun, () => ({ hw: hwB }));
       const landZ = zLip - landX;
       for (const st of chunk.steps) if (st.z < zLip - gapLen + 1e-6 && st.z > landZ) st.air = true;
@@ -415,6 +482,11 @@ export class Course {
         const p = deck();
         this.run(chunk, p, len, (k, dist, L) => ({ hw: ease(w0, w1, dist, L) }));
         if (!o.breather) this.placeObstacles(chunk, p, d);
+        // optional side kicker ramp: free air if you want it
+        if (!o.breather && r() < 0.4 && p.cx.length > 80) {
+          const iA = r.int(20, p.cx.length - 60), iB = iA + r.int(24, 36);
+          ramp(p, iA, iB, r.sign(), r.range(1.4, 2.4));
+        }
         // (A13) side-wind jets: a zone that shoves you sideways
         if (!o.breather && d >= 0.25 && r() < 0.6) {
           const zA = p.z0 - r.range(8, len * 0.5), zB = zA - r.range(10, 20);
@@ -453,12 +525,14 @@ export class Course {
         // a single bend ends offset: steer the sign back toward the canyon centre
         const Aa = sCurve ? A : -Math.sign(cx0 || r.sign()) * Math.abs(A) * 0.6;
         const p = new Platform('thin', c.z); chunk.platforms.push(p);
+        const i0 = chunk.steps.length - 1;
         this.run(chunk, p, len, (k, dist, L) => ({
           hw: lerp(w0, hw1, smooth(dist / 6)),
           // eased so the section starts and ends pointing straight down the slope
           // (an angled join is a kink, and a kink reads as a huge sideways shove)
           cx: cx0 + (sCurve ? Aa * Math.sin(2 * Math.PI * k) * smooth(k * 5) * smooth((1 - k) * 5) : Aa * (1 - Math.cos(Math.PI * k)) / 2),
         }));
+        autoBank(p, i0);
         break;
       }
       case 'winding': {
@@ -473,7 +547,7 @@ export class Course {
         // short consistent hop (~0.2–0.3 s) instead of a long flight off a bending track
         const vc = 2 * cycles, kv = (2 * Math.PI * vc) / len;
         const H = Math.min(3, (r.range(1.3, 1.7) * G) / (c.v * c.v) / (kv * kv)), cx0 = c.cx;
-        const p = deck();
+        const p = deck(), i0w = chunk.steps.length - 1;
         this.run(chunk, p, len, (k, dist, L) => {
           const env = smooth(k * 6) * smooth((1 - k) * 6);
           return {
@@ -482,6 +556,7 @@ export class Course {
             slope: this.baseSlope() + H * (2 * Math.PI * vc / L) * Math.sin(2 * Math.PI * vc * k) * env, // h = H·cos → crests at bend inflections
           };
         });
+        autoBank(p, i0w);
         this.run(chunk, p, 18, () => ({})); // flat run-out: land before the next section
         break;
       }
@@ -573,6 +648,69 @@ export class Course {
         this.run(chunk, post, 10, (k, dist, L) => ({ hw: ease(2.2, 3.5, dist, L) }));
         break;
       }
+      case 'megajump': {
+        // big launch ramp over a void onto a lower deck
+        const A = deck();
+        lipRun(A, r.range(30, 45), 3.5, r.range(16, 22));
+        fly({ drop: r.range(5, 10), reach: r.range(0.55, 0.75), hwB: 3.5, lenB: 30 });
+        break;
+      }
+      case 'stairs': {
+        // full-width steps dropping away: a run of short hops
+        const A = deck();
+        lipRun(A, 14, 3.5, 2);
+        const n = r.int(4, 7);
+        for (let i = 0; i < n; i++) fly({ drop: r.range(1.2, 2.2), reach: r.range(0.3, 0.45), hwB: 3.5, lenB: 0, lipLen: i < n - 1 ? r.range(4, 7) : 0, kick: 2, offset: 0 });
+        break;
+      }
+      case 'islands': {
+        // island hop: short pads zig-zagging left and right; line up before each lip
+        const A = deck();
+        lipRun(A, 18, 2.6);
+        const n = r.int(3, 5); let sd = r.sign();
+        for (let i = 0; i < n; i++) {
+          const last = i === n - 1;
+          fly({ drop: r.range(1.5, 2.5), reach: r.range(0.45, 0.6), hwB: last ? 3.5 : 1.9, lenB: last ? 20 : 0, lipLen: last ? 0 : r.range(10, 14), offset: last ? -c.cx * 0.5 : sd * r.range(1.6, 2.6) });
+          sd = -sd;
+        }
+        break;
+      }
+      case 'coaster': {
+        // straight rollercoaster: several crests, each sized to throw a short hop
+        const n = r.int(3, 5), lam = r.range(30, 45), len = n * lam, w0 = c.hw, kv = (2 * Math.PI) / lam;
+        const H = Math.min(3, (r.range(1.4, 1.8) * G) / (c.v * c.v) / (kv * kv));
+        const p = deck();
+        this.run(chunk, p, len, (k, dist) => ({ hw: ease(w0, 3.5, dist, len), slope: this.baseSlope() + H * kv * Math.sin(kv * dist) * smooth(dist / lam) }));
+        this.run(chunk, p, 15, () => ({}));
+        break;
+      }
+      case 'corkscrew': {
+        // the bank sweeps hard from one side to the other and back
+        const len = r.range(70, 110), B = r.range(24, 34) * DEG, cyc = r() < 0.5 ? 1 : 1.5, w0 = c.hw;
+        const p = deck();
+        this.run(chunk, p, len, (k, dist, L) => ({ hw: ease(w0, 3.5, dist, L), bank: B * Math.sin(2 * Math.PI * cyc * k) * smooth(dist / 12) * smooth((L - dist) / 12) }));
+        break;
+      }
+      case 'fork': {
+        // the track forks into two wide lanes that drift apart and rejoin; one may hold a block
+        const pre = deck(); const w0 = c.hw;
+        this.run(chunk, pre, 8, (k, dist, L) => ({ hw: ease(w0, 3.5, dist, L) }));
+        const len = r.range(50, 80), lhw = 1.8, cx = c.cx, spread = r.range(2, 4.5);
+        const L = new Platform('lane', c.z), R2 = new Platform('lane', c.z);
+        chunk.platforms.push(L, R2);
+        L.entrySlope = R2.entrySlope = c.lastSlope;
+        const nS = Math.round(len / DZ);
+        for (let i = 0; i <= nS; i++) {
+          const k = i / nS, off = 1.75 + spread * Math.sin(Math.PI * k);
+          L.push(cx - off, c.cy, lhw, 0); R2.push(cx + off, c.cy, lhw, 0);
+          if (i < nS) this.step(chunk, this.baseSlope());
+        }
+        if (d > 0.4) { const lane = r() < 0.5 ? L : R2; chunk.obstacles.push(this.obst('block', lane, L.z0 - len * r.range(0.35, 0.65), { u: 0, w: 1.6, h: 1.4, d: 0.9 })); }
+        c.hw = 3.5;
+        const post = deck();
+        this.run(chunk, post, 10, () => ({ hw: 3.5 }));
+        break;
+      }
       case 'halfpipe': {
         // owner request (A8): flat floor with quarter-pipe ramp walls; steer into a wall to
         // ride up it, and fast enough you launch out of the top and drop back in
@@ -591,7 +729,10 @@ export class Course {
         const rot = type === 'rottunnel' ? { amp: r.range(12, 25) * DEG, omega: (2 * Math.PI) / r.range(3, 5), phase: r.range(0, 6.28) } : null;
         // lead-in to full width first so the tunnel mouth is clean
         const pre = deck(); const w0 = c.hw;
-        this.run(chunk, pre, 10, (k, dist, L) => ({ hw: ease(w0, 3.5, dist, L) }));
+        const withRoof = !rot && r() < 0.75;
+        this.run(chunk, pre, withRoof ? 34 : 10, (k, dist, L) => ({ hw: ease(w0, 3.5, dist, L) }));
+        // optional ramp up to the tunnel roof: ride the roof, or stay low and take the tunnel
+        if (withRoof) ramp(pre, pre.cx.length - 46, pre.cx.length - 2, r.sign(), TUBE_H + 0.8, 'flat', 1.5);
         const len = r.range(40, 120);
         const p = deck({ tunnel: true, rot });
         // boost pads (A9): full-width, so every run takes them and timing stays predictable
@@ -603,6 +744,12 @@ export class Course {
           if (hit) { p.pads.push(c.z); pi++; }
           return { hw: 3.5, boost: hit };
         });
+        if (withRoof) {
+          const roof = new Platform('roof', p.z0); roof.optional = true; roof.openStart = roof.openEnd = true; roof.wall = [];
+          for (let i = 0; i < p.cx.length; i++) { roof.push(p.cx[i], p.cy[i] + TUBE_H + 0.05, p.hw[i], 0); roof.wall.push(0.3); }
+          roof.entrySlope = p.cy[0] - p.cy[1];
+          chunk.platforms.push(roof);
+        }
         const kinds = ['block', 'slider'];
         if (d >= 0.6) kinds.push('fin', 'rotor');
         if (d >= 0.3) this.placeObstacles(chunk, p, d, kinds, rot ? 1.3 : 1);
@@ -610,13 +757,6 @@ export class Course {
       }
     }
     chunk.zEnd = c.z;
-    // (A14) shards: score pickups, often on the risky line (walls, strips, edges)
-    chunk.shards = [];
-    for (const pl of chunk.platforms) {
-      if (pl.blink || pl.n < 12 || r() > 0.3) continue;
-      const k = r.int(3, 6), i0 = r.int(2, Math.max(3, pl.n - k * 6 - 2)), u = r.range(-1, 1) * Math.max(0, pl.hw[i0] - 0.6);
-      for (let j = 0; j < k; j++) { const i = Math.min(pl.n - 1, i0 + j * 6); chunk.shards.push({ pl, z: pl.z0 - i * DZ, u: pl.pipe ? u * 1.6 : u, taken: false }); }
-    }
     return chunk;
   }
 
@@ -656,6 +796,13 @@ export class Course {
           case 'slider': o.w = r.range(1.2, 2); o.h = r.range(1, 1.8); o.d = 0.9; o.amp = Math.max(0.2, hw - o.w / 2 - 0.05); o.u = 0; o.omega = (2 * Math.PI) / r.range(1.6, 3.5); o.phase = r.range(0, 6.28); break;
           case 'gate': o.omega = (2 * Math.PI) / r.range(1.8, 3.2); o.phase = r.range(0, 6.28); break;
           case 'lasers': o.n = Math.max(3, Math.round(hw * 1.4)); o.omega = (2 * Math.PI) / r.range(1.6, 2.6); o.phase = r.range(0, 6.28); o.offs = Array.from({ length: o.n }, (_, i) => i * r.range(0.6, 1.4)); break;
+          case 'crusher': o.side = r.sign(); o.omega = (2 * Math.PI) / r.range(1.6, 2.6); o.phase = r.range(0, 6.28); break;
+          case 'sweeper': o.side = r.sign(); o.omega = (2 * Math.PI) / r.range(2, 3.4); o.phase = r.range(0, 6.28); break;
+          case 'zipper': o.w = r.range(1.2, 2); o.h = r.range(1, 1.8); o.u = r.range(-hw + o.w / 2, hw - o.w / 2); o.amp = r.range(1.5, 3); o.omega = (2 * Math.PI) / r.range(1.2, 2.2); o.phase = r.range(0, 6.28); break;
+          case 'orbiters': o.u = r.range(-0.6, 0.6) * hw; o.rad = Math.min(1.6, hw * 0.5); o.omega = r.sign() * (2 * Math.PI) / r.range(1.6, 2.8); o.phase = r.range(0, 6.28); break;
+          case 'wave': o.n = Math.max(4, Math.round(hw * 2)); o.k = r.range(0.5, 0.9); o.omega = (2 * Math.PI) / r.range(1.8, 2.8); o.phase = r.range(0, 6.28); break;
+          case 'slalom': o.u = r.sign() * Math.max(0.5, hw * 0.45); o.gapZ = r.range(5, 9); break;
+          case 'twinrotor': o.rate = r.range(50, 90) * DEG; o.phase = r.range(0, 6.28); break;
           case 'pistons': o.omega = (2 * Math.PI) / r.range(1.8, 3.0); o.phase = r.range(0, 6.28); o.offs = [0, r.range(1.5, 2.6), r.range(3.2, 4.6)]; break;
           case 'pendulum': o.w = r.range(1.2, 1.8); o.h = 1.4; o.d = 0.9; o.amp = Math.max(0.3, hw - o.w / 2); o.omega = (2 * Math.PI) / r.range(2, 4); o.phase = r.range(0, 6.28); break;
           case 'rotor': o.len = hw * 2 * 0.8; o.rate = r.sign() * r.range(40, 90) * DEG; o.phase = r.range(0, 6.28); o.u = 0; break;
@@ -698,7 +845,7 @@ export class Course {
       // lateral dynamics for this step: ghosts follow the deck heading, feel partial
       // centrifugal + bank pull, and can steer at 70% of terminal lateral speed
       let pl0 = null;
-      for (const pl of chunk.platforms) if (st.z <= pl.z0 + 1e-6 && st.z >= pl.z1 - 1e-6) { pl0 = pl; break; }
+      for (const pl of chunk.platforms) if (!pl.optional && st.z <= pl.z0 + 1e-6 && st.z >= pl.z1 - 1e-6) { pl0 = pl; break; }
       let lo = 0, hi = 0;
       if (pl0 && !wasAir) {
         pl0.geo(st.z, st.t, s); pl0.bend(st.z, bd); head = bd.dcx;
@@ -720,7 +867,7 @@ export class Course {
       // safe: on some platform (eroded), for all t in the window
       const safe = new Uint8Array(GN);
       for (const pl of chunk.platforms) {
-        if (st.z > pl.z0 + 1e-6 || st.z < pl.z1 - 1e-6) continue;
+        if (pl.optional || st.z > pl.z0 + 1e-6 || st.z < pl.z1 - 1e-6) continue;
         let lo = -1e9, hi = 1e9;
         for (const dt of [-0.15, 0, 0.15]) {
           if (!pl.solidAt(st.t + dt)) { lo = 1e9; break; }      // blink tile off at some point in the window
@@ -734,7 +881,7 @@ export class Course {
       }
       // obstacles near this z, at the predicted arrival time ± 0.15 s
       for (const o of chunk.obstacles) {
-        if (Math.abs(o.z - st.z) > 3.5) continue;
+        if (Math.abs(o.z - st.z) > 12) continue;
         const pl = o.pl;
         for (const dt of [-0.15, 0, 0.15]) {
           const nb = obstacleBoxes(o, st.t + dt, boxes);
@@ -814,28 +961,14 @@ export class Course {
     return out;
   }
 
-  // pickups within reach of the ball; returns bonus points collected
-  collectShards(x, y, z) {
-    let pts = 0;
-    for (const c of this.chunks) {
-      if (z > c.zStart + 2 || z < c.zEnd - 2 || !c.shards) continue;
-      for (const sh of c.shards) {
-        if (sh.taken || Math.abs(sh.z - z) > 1.3) continue;
-        const g = sh.pl.geo(sh.z, this.clockAt(sh.z), this._s), P = sh.pl.point(sh.u, g, this._p || (this._p = {}));
-        if (Math.hypot(P.x - x, P.y + 0.8 - y) < 1.25) { sh.taken = true; pts += 10; this.shardsTaken = (this.shardsTaken || 0) + 1; }
-      }
-    }
-    return pts;
-  }
-
   hitObstacle(x, y, z, r, t) {
     const boxes = this._boxes;
     for (const c of this.chunks) {
       if (z > c.zStart + 4 || z < c.zEnd - 4) continue;
       for (const o of c.obstacles) {
-        if (Math.abs(o.z - z) > 4) continue;
+        if (Math.abs(o.z - z) > 12) continue;
         const n = obstacleBoxes(o, t, boxes);
-        for (let i = 0; i < n; i++) if (!boxes[i].ghost && sphereHitsBox(x, y, z, r, boxes[i])) return true;
+        for (let i = 0; i < n; i++) if (!boxes[i].ghost && sphereHitsBox(x, y, z, r, boxes[i])) return o;
       }
     }
     return false;

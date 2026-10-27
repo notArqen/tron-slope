@@ -56,7 +56,7 @@ export class Ball {
     // that never get a keyup, so a fresh run would otherwise inherit a stuck ← or →
     this.keys.clear();
     this.x = 0; this.z = 0; this.u = 0; this.vu = 0;
-    this.speed = V_MIN; this.minSpeed = V_MIN; this.maxSpeed = V_MAX; this.boost = 0; this.bonus = 0;
+    this.speed = V_MIN; this.minSpeed = V_MIN; this.maxSpeed = V_MAX; this.boost = 0; this.airT = 0;
     this.vx = 0; this.vy = 0;
     this.grounded = true; this.pl = null;
     this.dead = false; this.deathCause = null;
@@ -104,11 +104,16 @@ export class Ball {
       this.z = nz;
       this.dist += vt * dt;
 
-      // continue onto the next platform when this one ends (or a blink tile switches off)
+      // continue onto the next platform when this one ends (or a blink tile switches off);
+      // only onto a surface at about the same height, so a ramp end launches you
       let cur = pl;
       if (this.z < pl.z1 || !pl.solidAt(t)) {
-        const n = this.z < pl.z1 ? C.surfaceAt(P.x, this.z, t, this.y + 0.3, this.srf) : null;
-        if (n) { cur = n.pl; this.pl = cur; this.u = n.u; } else cur = null;
+        const n = this.z < pl.z1 ? C.surfaceAt(P.x, this.z, t, P.y + 0.3, this.srf) : null;
+        if (n && Math.abs(n.y - P.y) < 0.6) { cur = n.pl; this.pl = cur; this.u = n.u; } else cur = null;
+      } else {
+        // step up onto a surface that starts flush with this one (rolling onto a ramp)
+        const up = C.surfaceAt(P.x, this.z, t, P.y + 0.3, this.srf);
+        if (up && up.pl !== pl && up.y > P.y + 0.002 && up.y < P.y + 0.3) { cur = up.pl; this.pl = cur; this.u = up.u; }
       }
       // crest: the deck drops away faster than gravity → fly (lateral speed freezes)
       const crest = cur && !cur.tunnel && crestLaunch(this.vt, slopeTan, slopeAhead, 1);
@@ -135,12 +140,17 @@ export class Ball {
       }
     } else {
       this.vy -= G * dt;
+      // weak, floaty air control: ~10% of ground steering, lagged so it feels vague
+      this.airIn = (this.airIn || 0) + (this.input - (this.airIn || 0)) * Math.min(1, dt * 4);
+      this.vx += this.airIn * STEER_ACC * 0.1 * dt;
       this.y += this.vy * dt;
       this.x += this.vx * dt;
+      this.airT += dt;
       this.z -= this.vt * dt;
       this.dist += this.vt * dt;
       const srf = C.surfaceAt(this.x, this.z, C.clockAt(this.z), this.y, this.srf);
       if (srf && this.y - BALL_R <= srf.y + 0.05 && py - BALL_R >= srf.y - 0.6) {
+        this.airT = 0;
         this.grounded = true; this.pl = srf.pl; this.u = srf.u;
         // world lateral velocity → deck-relative: remove the deck's own heading, or every
         // hop on a curve would add speed·heading to the sideways speed and fling the ball off
@@ -157,10 +167,10 @@ export class Ball {
 
     if (this.boost) { this.boost *= Math.exp(-dt / BOOST_TAU); if (this.boost < 0.05) this.boost = 0; }
     if (this.boosted) this.boosted = Math.max(0, this.boosted - dt);
-    // shard pickups
-    const got = this.isSim ? 0 : C.collectShards(this.x, this.y, this.z); // sim balls (autopilot rollouts) never take real shards
-    if (got) { this.bonus += got; this.picked = (this.picked || 0) + 1; }
-    if (!this.dead && !godMode && C.hitObstacle(this.x, this.y, this.z, BALL_R * 0.95, C.clockAt(this.z))) this.kill('hit');
+    if (!this.dead && !godMode) {
+      const tc = C.clockAt(this.z), hit = C.hitObstacle(this.x, this.y, this.z, BALL_R * 0.95, tc);
+      if (hit) this.kill('hit');
+    }
 
     // rolling: rotate about the axis perpendicular to world motion
     this.vel.set((this.x - px) / dt, (this.y - py) / dt, (this.z - pz) / dt);

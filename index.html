@@ -30,6 +30,7 @@
         <button class="m-ghost" data-act="settings">Settings</button>
       </div>
       <div class="m-best"></div>
+      <div class="m-tracks"></div>
       <div class="m-keys"><kbd>←</kbd><kbd>→</kbd> steer · <kbd>esc</kbd> pause · <kbd>`</kbd> settings</div>
     </section>
     <section id="pause" hidden aria-label="Paused">
@@ -38,6 +39,7 @@
       <button data-act="resume">Resume</button>
       <button data-act="restart">Restart run</button>
       <button data-act="newSeed">New seed</button>
+      <button data-act="saveTrack" class="p-save">Save track</button>
       <button data-act="toggleAutoplay" class="p-auto">Autoplay: off</button>
       <button data-act="settings">Settings</button>
       <button data-act="quit">Main menu</button>
@@ -49,6 +51,7 @@
         <label for="seed-in">seed</label>
         <input id="seed-in" spellcheck="false" autocomplete="off" maxlength="32" />
         <button type="submit">play</button>
+        <button type="button" class="s-save">save track</button>
       </form>
       <div class="s-keys"><kbd>space</kbd> retry this seed · <kbd>R</kbd> new seed · <kbd>M</kbd> menu</div>
     </section>
