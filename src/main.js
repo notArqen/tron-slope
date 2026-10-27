@@ -102,7 +102,7 @@ const overlay = new Overlay(settings, perf, { probe: (key) => startProbe(key) })
 // ---------------------------------------------------------------- sizing / dynamic resolution
 let dynScale = 1, dynCooldown = 0, camRoll = 0;
 let idleFrameDone = false;
-let topSpeed = 0, lookY = 0, heldBank = 0, surgeT = 0, landDip = 0, boostPunch = 0, lastHundred = 0; // feel: landing dip, boost jolt, score milestones // paused: draw once, then stop until something changes
+let topSpeed = 0, lookX = 0, lookY = 0, heldBank = 0, surgeT = 0, landDip = 0, boostPunch = 0, lastHundred = 0; // feel: landing dip, boost jolt, score milestones // paused: draw once, then stop until something changes
 function internalSize() {
   const dpr = Math.min(devicePixelRatio || 1, S.maxDpr);
   const cw = innerWidth, ch = innerHeight;
@@ -182,7 +182,7 @@ function startRun(newSeed, { attract = false } = {}) {
   ball.mesh.visible = true;
   city.reset(0); dys.reset(0); floaters.reset(0); cycle.reset();
   pipeline.historyValid = false;
-  camPos.set(0, ball.y + 2.6, 7.2); lookY = ball.y - 0.6; heldBank = 0;
+  camPos.set(0, ball.y + 2.6, 7.2); lookY = ball.y - 0.6; lookX = ball.x; heldBank = 0;
   deathT = -1; acc = 0; lastHundred = 0; topSpeed = 0;
   phase = attract ? 'menu' : 'run';
   if (!attract) { tracks.played(seed); menu.hideTitle(); menu.hidePause(); hud.startRun(seedToString(seed)); hud.setAutoplay(autoplay); autopilot.reset(); }
@@ -353,11 +353,11 @@ function frame(now) {
   // camera: chase cam with FOV kick + shake
   const sp = ball.speedN;
   course.centreAt(ball.z, ctr);
-  // look further down the curve, and follow the track line more than the ball
-  const cxAhead = course.centreAt(ball.z - 22, {}).cx;
-  const target = tmpV.set(ball.x * 0.5 + ctr.cx * 0.5, ball.y + 2.6 - landDip, ball.z + 7.2);
+  // camera follows the ball only, never the track geometry: centreline lookups jump
+  // between lane platforms (splits/forks/hole grids) and that was the snapping
+  const target = tmpV.set(ball.x, ball.y + 2.6 - landDip, ball.z + 7.2);
   // feel: lateral follow stays tight, height eases (jumps read as air, not a glued camera)
-  camPos.x += (target.x - camPos.x) * (1 - Math.exp(-dt * 10));
+  camPos.x += (target.x - camPos.x) * (1 - Math.exp(-dt * 6));
   camPos.y += (target.y - camPos.y) * (1 - Math.exp(-dt * 6)); // one constant rate: switching rates on takeoff/landing caused snaps
   lookY += (ball.y - 0.6 - lookY) * (1 - Math.exp(-dt * 7));   // smoothed aim height (pinning it to the ball jerked the view)
   camPos.z = target.z;
@@ -366,11 +366,11 @@ function frame(now) {
   if (S.shake) shake = S.shakeAmt * (sp * 0.02 + weather.lightningFlash * 0.03 * (S.lightning ? 1 : 0) + shakeImpact * 0.25);
   camera.position.x += (Math.sin(simTime * 37.1) + Math.sin(simTime * 23.3)) * shake;
   camera.position.y += (Math.sin(simTime * 41.7) + Math.sin(simTime * 19.9)) * shake;
-  camLook.set(ball.x * 0.4 + cxAhead * 0.6, lookY, ball.z - 18);
+  lookX += (ball.x - lookX) * (1 - Math.exp(-dt * 5));
+  camLook.set(lookX, lookY, ball.z - 18);
   camera.lookAt(camLook);
   // roll with the deck bank (max 12°)
-  if (ball.grounded) heldBank = ball.bank; // hold the roll through the air instead of snapping level
-  camRoll += (-heldBank * 0.55 - (ball.vu || 0) * 0.012 - camRoll) * (1 - Math.exp(-dt * 6)); // lean into steering
+  camRoll += (0 - (ball.vu || 0) * 0.012 - camRoll) * (1 - Math.exp(-dt * 6)); // lean into steering
   camera.rotateZ(Math.max(-0.21, Math.min(0.21, camRoll)));
   // debug: window.__camOverride = (cam, ball) => {...} lets tooling place the camera (e.g. bike side view)
   if (window.__camOverride) window.__camOverride(camera, ball);
