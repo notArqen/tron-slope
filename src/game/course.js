@@ -11,7 +11,7 @@ export const GRID = { X0: -26, DX: 0.05, N: 1041 };
 export const G = 28;               // gameplay gravity (m/s²)
 export const BALL_R = 0.55;
 export const STEER_ACC = 70, STEER_DAMP = 10; // same top lateral speed (7 m/s), reached ~1.5× faster
-export const V_MIN = 14, V_MAX = 72, K_ACC = 4.8; // owner: top speed raised from 62 (≈260 km/h)
+export const V_MIN = 14, V_MAX = 85, K_ACC = 6.0; // owner: top speed raised from 62 (≈260 km/h)
 export const CENTRIFUGAL = 0.1;   // fraction of v²κ felt on curves (the ball mostly follows the deck heading)
 export const KAPPA_MAX = 1 / 25;  // tightest bend the generator builds; clamps finite-difference spikes at joins
 const TAN_STEEP = Math.tan((14 * Math.PI) / 180);
@@ -494,7 +494,7 @@ export class Course {
         const w0 = c.hw, w1 = 3.5;
         const p = deck();
         // boost pad on some straights (full width, so timing stays predictable)
-        const padD = !o.breather && d >= 0.15 && r() < 0.35 ? r.range(12, len * 0.5) : -1;
+        const padD = !o.breather && d >= 0.1 && r() < 0.6 ? r.range(12, len * 0.5) : -1;
         let padDone = false;
         this.run(chunk, p, len, (k, dist, L) => {
           const hit = !padDone && padD > 0 && dist >= padD;
@@ -526,7 +526,12 @@ export class Course {
       case 'narrow': {
         const len = r.range(Math.max(35, c.v * 1.5), Math.max(70, c.v * 2.8)), w0 = c.hw, w1 = r.range(3.5, 5) / 2;
         const p = deck();
-        this.run(chunk, p, len, (k, dist, L) => ({ hw: ease(w0, w1, dist, L) }));
+        const padN = d >= 0.1 && r() < 0.4 ? r.range(10, len * 0.5) : -1; let padDoneN = false;
+        this.run(chunk, p, len, (k, dist, L) => {
+          const hit = !padDoneN && padN > 0 && dist >= padN;
+          if (hit) { p.pads.push(c.z); padDoneN = true; }
+          return { hw: ease(w0, w1, dist, L), boost: hit };
+        });
         this.placeObstacles(chunk, p, d, ['block', 'slider']);
         break;
       }
@@ -771,7 +776,7 @@ export class Course {
         const p = deck({ tunnel: true, rot });
         // boost pads (A9): full-width, so every run takes them and timing stays predictable
         const padAt = d >= 0.15 && !rot ? [r.range(10, Math.max(12, len * 0.4))] : [];
-        if (padAt.length && len > 60 && r() < 0.6) padAt.push(r.range(len * 0.6, len - 12));
+        if (padAt.length && len > 50 && r() < 0.9) padAt.push(r.range(len * 0.6, len - 12));
         let pi = 0;
         this.run(chunk, p, len, (k, dist) => {
           const hit = pi < padAt.length && dist >= padAt[pi];

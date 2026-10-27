@@ -17,6 +17,7 @@ export class Settings {
         if ((saved._v || 1) < 2) {
           for (const [k, oldDef] of Object.entries({ mbStrength: 0.6, radialStrength: 0.5, caStrength: 0.35 })) if (saved[k] === oldDef) delete saved[k];
         }
+        if ((saved._v || 1) < 3) delete saved.curves; // v3: curvy sections now default off
         this.assign(saved, false);
       }
     } catch { /* private mode / corrupt — fall back to defaults */ }
@@ -74,11 +75,11 @@ export class Settings {
     if (emit) { for (const k of Object.keys(this.values)) this.emit(k); this.save(); }
   }
 
-  exportJSON() { return JSON.stringify({ ...this.values, _v: 2 }, null, 2); }
+  exportJSON() { return JSON.stringify({ ...this.values, _v: 3 }, null, 2); }
 
   save() {
     clearTimeout(this._saveT);
-    this._saveT = setTimeout(() => { try { localStorage.setItem(LS_KEY, JSON.stringify({ ...this.values, _v: 2 })); } catch { /* quota */ } }, 150);
+    this._saveT = setTimeout(() => { try { localStorage.setItem(LS_KEY, JSON.stringify({ ...this.values, _v: 3 })); } catch { /* quota */ } }, 150);
   }
 
   on(fn) { this.listeners.add(fn); return () => this.listeners.delete(fn); }
