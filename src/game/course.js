@@ -10,8 +10,8 @@ export const DZ = 0.5;
 export const GRID = { X0: -26, DX: 0.05, N: 1041 };
 export const G = 28;               // gameplay gravity (m/s²)
 export const BALL_R = 0.55;
-export const STEER_ACC = 46, STEER_DAMP = 6.5;
-export const V_MIN = 14, V_MAX = 62, K_ACC = 4.8;
+export const STEER_ACC = 70, STEER_DAMP = 10; // same top lateral speed (7 m/s), reached ~1.5× faster
+export const V_MIN = 14, V_MAX = 72, K_ACC = 4.8; // owner: top speed raised from 62 (≈260 km/h)
 export const CENTRIFUGAL = 0.1;   // fraction of v²κ felt on curves (the ball mostly follows the deck heading)
 export const KAPPA_MAX = 1 / 25;  // tightest bend the generator builds; clamps finite-difference spikes at joins
 const TAN_STEEP = Math.tan((14 * Math.PI) / 180);
@@ -182,12 +182,12 @@ export function obstacleBoxes(o, t, out) {
     }
     case 'lasers': {
       // thin vertical beams across the deck, each pulsing on/off on its own phase
+      // pop-up blocks: chunky blocks rising out of glowing floor pads on a timer
       for (let i = 0; i < o.n; i++) {
-        const u = -s.hw + (2 * s.hw) * (i + 0.5) / o.n;
-        // emitter pad + header always visible (visual only), so you can read where beams fire
-        put(u, 0.06, 0.22, 0.06, 0.22, 0, true);
-        put(u, 2.66, 0.22, 0.06, 0.22, 0, true);
-        if (Math.sin(ph + o.offs[i]) > 0.15) put(u, 1.33, 0.12, 1.27, 0.12);
+        const u = -s.hw + (2 * s.hw) * (i + 0.5) / o.n, w = Math.min(0.6, s.hw / o.n - 0.15);
+        put(u, 0.04, w + 0.1, 0.04, 0.7, 0, true); // pad: always visible, shows where a block lives
+        const h = 1.4 * Math.max(0, Math.min(1, Math.sin(ph + o.offs[i]) * 1.6 + 0.2));
+        if (h > 0.08) put(u, h / 2, w, h / 2, 0.6);
       }
       break;
     }
@@ -247,6 +247,10 @@ export function sphereHitsBox(px, py, pz, r, b) {
 }
 
 // --------------------------------------------------------------- course
+// keep it simple and consistent like the original: a small core of section types
+// carries the run; everything else is a rare curveball (never two in a row)
+const CURVEBALLS = new Set(['halfpipe', 'strips', 'blink', 'shuttle', 'megajump', 'stairs', 'islands', 'coaster', 'corkscrew', 'fork', 'split', 'rottunnel']);
+const RARE_OBSTACLES = new Set(['pendulum', 'rotor', 'lasers', 'crusher', 'sweeper', 'zipper', 'orbiters', 'wave', 'slalom', 'twinrotor', 'gate']);
 const TYPES = [
   { id: 'straight', d: 0, w: 3 }, { id: 'narrow', d: 0, w: 2 },
   { id: 'banked', d: 0.1, w: 2 }, { id: 'steep', d: 0.1, w: 1.5 },
@@ -306,10 +310,15 @@ export class Course {
   chooseType(d) {
     const c = this.cur, r = this.rng;
     if (c.sinceBreather >= c.nextBreather) return 'breather';
-    const last2 = c.hist.slice(-2);
-    const pool = TYPES.filter((t) => t.d <= d && !(last2.length === 2 && last2[0] === t.id && last2[1] === t.id));
-    let sum = pool.reduce((s, t) => s + t.w, 0), x = r() * sum;
-    for (const t of pool) { x -= t.w; if (x <= 0) return t.id; }
+    const last2 = c.hist.slice(-2), lastCurve = CURVEBALLS.has(c.hist[c.hist.length - 1]);
+    const curvy = (id) => this.noCurves && (id === 'thin' || id === 'winding' || id === 'corkscrew');
+    const pool = TYPES.filter((t) => t.d <= d && !curvy(t.id) && !(last2.length === 2 && last2[0] === t.id && last2[1] === t.id) && !(lastCurve && CURVEBALLS.has(t.id)));
+    // curveballs share ~14% of the weight between them, however many are unlocked
+    const core = pool.filter((t) => !CURVEBALLS.has(t.id)), curve = pool.filter((t) => CURVEBALLS.has(t.id));
+    const coreW = core.reduce((s, t) => s + t.w, 0), curveW = curve.reduce((s, t) => s + t.w, 0);
+    const wOf = (t) => (CURVEBALLS.has(t.id) ? (t.w / (curveW || 1)) * coreW * 0.24 : t.w);
+    let sum = pool.reduce((s, t) => s + wOf(t), 0), x = r() * sum;
+    for (const t of pool) { x -= wOf(t); if (x <= 0) return t.id; }
     return pool[pool.length - 1].id;
   }
 
@@ -432,7 +441,7 @@ export class Course {
       for (let i = 1; i < n - 1; i++) {
         const kappa = (pl.cx[i + 1] - 2 * pl.cx[i] + pl.cx[i - 1]) / (DZ * DZ);
         const v = (st[Math.min(st.length - 1, i0 + i)] || st[st.length - 1]).v;
-        const sn = Math.max(-0.45, Math.min(0.45, (-0.8 * CENTRIFUGAL * v * v * Math.max(-KAPPA_MAX, Math.min(KAPPA_MAX, kappa))) / G));
+        const sn = Math.max(-0.26, Math.min(0.26, (-0.6 * CENTRIFUGAL * v * v * Math.max(-KAPPA_MAX, Math.min(KAPPA_MAX, kappa))) / G)); // ≤15°, cancels ~60%
         pl.bank[i] += Math.asin(sn);
       }
     };
@@ -484,13 +493,29 @@ export class Course {
         const len = o.len ?? (o.breather ? Math.max(c.v * 1.6, 30) : r.range(Math.max(40, c.v * 2), Math.max(70, c.v * 3.5)));
         const w0 = c.hw, w1 = 3.5;
         const p = deck();
-        this.run(chunk, p, len, (k, dist, L) => ({ hw: ease(w0, w1, dist, L) }));
-        if (!o.breather) this.placeObstacles(chunk, p, d);
-        // optional side kicker ramp: free air if you want it
-        if (!o.breather && r() < 0.4 && p.cx.length > 80) {
-          const iA = r.int(20, p.cx.length - 60), iB = iA + r.int(24, 36);
-          ramp(p, iA, iB, r.sign(), r.range(1.4, 2.4));
+        // boost pad on some straights (full width, so timing stays predictable)
+        const padD = !o.breather && d >= 0.15 && r() < 0.35 ? r.range(12, len * 0.5) : -1;
+        let padDone = false;
+        this.run(chunk, p, len, (k, dist, L) => {
+          const hit = !padDone && padD > 0 && dist >= padD;
+          if (hit) { p.pads.push(c.z); padDone = true; }
+          return { hw: ease(w0, w1, dist, L), boost: hit };
+        });
+        // optional side ramp, decided before obstacles so none spawn inside it
+        let rampZone = null;
+        if (!o.breather && r() < 0.4) {
+          // runway after the lip: the whole flight (~1.3 s) plus a second to recentre before the deck changes
+          const v = c.v + (c.boost || 0), need = Math.ceil((v * 2.3 + 15) / DZ), span = r.int(24, 36);
+          if (p.cx.length > 20 + span + need) {
+            const iA = r.int(20, p.cx.length - span - need), side = r.sign(), rp = ramp(p, iA, iA + span, side, r.range(1.6, 2.4));
+            const hwR = p.hw[iA + span], uA = side > 0 ? hwR - 2.4 : -hwR, uB = side > 0 ? hwR : -hwR + 2.4;
+            rampZone = { zA: rp.z0 + 1, zB: rp.z1 - 1, uA, uB };
+            // something to jump: a low block in the ramp's lane, past the lip under its arc
+            const zT = rp.z1 - r.range(10, Math.min(22, v * 0.4));
+            if (zT > p.z1 + 5) chunk.obstacles.push(this.obst('block', p, zT, { u: side * (hwR - 1.2), w: 1.6, h: 1.1, d: 0.9 }));
+          }
         }
+        if (!o.breather) this.placeObstacles(chunk, p, d, null, 1, { avoid: rampZone ? [rampZone] : [] });
         // (A13) side-wind jets: a zone that shoves you sideways
         if (!o.breather && d >= 0.25 && r() < 0.6) {
           const zA = p.z0 - r.range(8, len * 0.5), zB = zA - r.range(10, 20);
@@ -544,7 +569,7 @@ export class Course {
         // down. Rolls crest hard enough at speed to throw the ball into short hops.
         const len = r.range(120, 220), cycles = r() < 0.5 ? 1 : 2, lam = len / cycles;
         const Amax = Math.min(9, (lam * lam) / (25 * 4 * Math.PI * Math.PI)); // min radius 25 m
-        const A = r.sign() * r.range(0.5, 1) * Amax, w0 = c.hw, hw1 = lerp(2.5, 1.5, d) * r.range(0.9, 1.1);
+        const A = r.sign() * r.range(0.5, 1) * Math.min(Amax, 6), w0 = c.hw, hw1 = lerp(3.0, 2.2, d) * r.range(0.95, 1.05); // wider, gentler
         // vertical rolls twice per lateral cycle, phased so every crest sits on an
         // inflection of the bend: the ball only hops where the track runs straight
         // roll height sized to the predicted speed: crest curvature ≈ 1.5·G/v² gives a
@@ -557,7 +582,7 @@ export class Course {
           return {
             hw: lerp(w0, hw1, smooth(dist / 10)),
             cx: cx0 + A * Math.sin(2 * Math.PI * cycles * k) * env,
-            slope: this.baseSlope() + H * (2 * Math.PI * vc / L) * Math.sin(2 * Math.PI * vc * k) * env, // h = H·cos → crests at bend inflections
+            // no rolls: airborne on a bending strip = flying off it (hops live in 'coaster' instead)
           };
         });
         autoBank(p, i0w);
@@ -568,7 +593,7 @@ export class Course {
         // ease to full width, then two lanes over a void, then merge
         const pre = deck();
         const w0 = c.hw;
-        this.run(chunk, pre, 8, (k, dist, L) => ({ hw: ease(w0, 3.5, dist, L) }));
+        this.run(chunk, pre, 22, (k, dist, L) => ({ hw: ease(w0, 3.5, dist, L) })); // time to pick a lane
         const len = r.range(20, 40), g = r.range(0.6, 1.5), lhw = 1.25, cx = c.cx;
         const zStart = c.z, cyStart = c.cy;
         const L = new Platform('lane', zStart), Rr = new Platform('lane', zStart);
@@ -664,7 +689,11 @@ export class Course {
         const A = deck();
         lipRun(A, 14, 3.5, 2);
         const n = r.int(4, 7);
-        for (let i = 0; i < n; i++) fly({ drop: r.range(1.2, 2.2), reach: r.range(0.3, 0.45), hwB: 3.5, lenB: 0, lipLen: i < n - 1 ? r.range(4, 7) : 0, kick: 2, offset: 0 });
+        for (let i = 0; i < n; i++) {
+          const { B } = fly({ drop: r.range(1.2, 2.2), reach: r.range(0.3, 0.45), hwB: 3.5, lenB: 0, lipLen: i < n - 1 ? r.range(12, 18) : 0, kick: 2, offset: 0 });
+          // a block mid-step on most steps (the validator still demands a way through)
+          if (i > 0 && r() < 0.7) { const zm = (B.z0 + B.z1) / 2, w = r.range(1.2, 2.2); chunk.obstacles.push(this.obst('block', B, zm, { u: r.range(-3.5 + w / 2 + 0.2, 3.5 - w / 2 - 0.2), w, h: r.range(1, 1.8), d: 0.9 })); }
+        }
         break;
       }
       case 'islands': {
@@ -674,7 +703,8 @@ export class Course {
         const n = r.int(3, 5); let sd = r.sign();
         for (let i = 0; i < n; i++) {
           const last = i === n - 1;
-          fly({ drop: r.range(1.5, 2.5), reach: r.range(0.45, 0.6), hwB: last ? 3.5 : 1.9, lenB: last ? 20 : 0, lipLen: last ? 0 : r.range(10, 14), offset: last ? -c.cx * 0.5 : sd * r.range(1.6, 2.6) });
+          const { B } = fly({ drop: r.range(1.5, 2.5), reach: r.range(0.45, 0.6), hwB: last ? 3.5 : 1.9, lenB: last ? 20 : 0, lipLen: last ? 0 : r.range(16, 22), offset: last ? -c.cx * 0.5 : sd * r.range(1.6, 2.6) });
+          if (!last && r() < 0.6) { const zm = (B.z0 + B.z1) / 2; chunk.obstacles.push(this.obst('block', B, zm, { u: r.sign() * 0.9, w: 1.0, h: 1.2, d: 0.9 })); }
           sd = -sd;
         }
         break;
@@ -740,8 +770,8 @@ export class Course {
         const len = r.range(40, 120);
         const p = deck({ tunnel: true, rot });
         // boost pads (A9): full-width, so every run takes them and timing stays predictable
-        const padAt = d >= 0.3 && !rot ? [r.range(10, Math.max(12, len * 0.4))] : [];
-        if (padAt.length && len > 70 && r() < 0.5) padAt.push(r.range(len * 0.6, len - 12));
+        const padAt = d >= 0.15 && !rot ? [r.range(10, Math.max(12, len * 0.4))] : [];
+        if (padAt.length && len > 60 && r() < 0.6) padAt.push(r.range(len * 0.6, len - 12));
         let pi = 0;
         this.run(chunk, p, len, (k, dist) => {
           const hit = pi < padAt.length && dist >= padAt[pi];
@@ -753,6 +783,14 @@ export class Course {
           for (let i = 0; i < p.cx.length; i++) { roof.push(p.cx[i], p.cy[i] + TUBE_H + 0.05, p.hw[i], 0); roof.wall.push(0.3); }
           roof.entrySlope = p.cy[0] - p.cy[1];
           chunk.platforms.push(roof);
+          // red blocks + sliders up on the roof too (doesn't disturb deck obstacle spacing)
+          const keep = c.lastObsT; c.lastObsT = -1e9;
+          this.placeObstacles(chunk, roof, Math.max(d, 0.3), ['block', 'slider'], 1.2);
+          c.lastObsT = keep;
+          // landing runout: rolling off the roof end drops TUBE_H; land on deck, not in whatever comes next
+          const v = c.v + (c.boost || 0), drop = (v * Math.sqrt((2 * (TUBE_H + 1)) / G)) * 1.3 + 15;
+          const out = deck();
+          this.run(chunk, out, drop, () => ({ hw: 3.5 }));
         }
         const kinds = ['block', 'slider'];
         if (d >= 0.6) kinds.push('fin', 'rotor');
@@ -768,7 +806,7 @@ export class Course {
     return { type, pl, z, u: 0, w: 1, h: 1, d: 1, omega: 0, phase: 0, ...extra };
   }
 
-  placeObstacles(chunk, pl, d, kinds = null, spacingMul = 1) {
+  placeObstacles(chunk, pl, d, kinds = null, spacingMul = 1, { avoid = [], postLand = 1.2 } = {}) {
     const r = this.rng;
     const allowed = OBSTACLES.filter((o) => o.d <= d && (!kinds || kinds.includes(o.id)));
     if (kinds?.includes('fin') && d >= 0.6) allowed.push({ id: 'fin', d: 0.6, w: 1.5 });
@@ -782,7 +820,7 @@ export class Course {
     const gapT = () => lerp(0.9, 0.45, d) * (1 + r() * 0.6) * spacingMul;
     // decision spacing carries across chunks (no reset at chunk boundaries)
     let t = Math.max(tStart + 0.2, (cur.lastObsT ?? -1e9) + gapT());
-    if (pl.openStart) t = Math.max(t, tStart + 1.2); // no obstacle within 1.2 s after landing
+    if (pl.openStart) t = Math.max(t, tStart + postLand); // no obstacle right after a landing
     const tLast = pl.lip ? tEnd - 0.6 : tEnd - 0.3;
     while (t < tLast) {
       // convert time → z on this platform
@@ -799,7 +837,7 @@ export class Course {
           case 'wall': o.gap = r.range(1.6, 2.5); o.h = r.range(1.6, 2.4); o.u = r.range(-hw + o.gap / 2 + 0.2, hw - o.gap / 2 - 0.2); break;
           case 'slider': o.w = r.range(1.2, 2); o.h = r.range(1, 1.8); o.d = 0.9; o.amp = Math.max(0.2, hw - o.w / 2 - 0.05); o.u = 0; o.omega = (2 * Math.PI) / r.range(1.6, 3.5); o.phase = r.range(0, 6.28); break;
           case 'gate': o.omega = (2 * Math.PI) / r.range(1.8, 3.2); o.phase = r.range(0, 6.28); break;
-          case 'lasers': o.n = Math.max(3, Math.round(hw * 1.4)); o.omega = (2 * Math.PI) / r.range(1.6, 2.6); o.phase = r.range(0, 6.28); o.offs = Array.from({ length: o.n }, (_, i) => i * r.range(0.6, 1.4)); break;
+          case 'lasers': o.n = Math.max(2, Math.round(hw * 0.8)); o.omega = (2 * Math.PI) / r.range(1.6, 2.6); o.phase = r.range(0, 6.28); o.offs = Array.from({ length: o.n }, (_, i) => i * r.range(0.6, 1.4)); break;
           case 'crusher': o.side = r.sign(); o.omega = (2 * Math.PI) / r.range(1.6, 2.6); o.phase = r.range(0, 6.28); break;
           case 'sweeper': o.side = r.sign(); o.omega = (2 * Math.PI) / r.range(2, 3.4); o.phase = r.range(0, 6.28); break;
           case 'zipper': o.w = r.range(1.2, 2); o.h = r.range(1, 1.8); o.u = r.range(-hw + o.w / 2, hw - o.w / 2); o.amp = r.range(1.5, 3); o.omega = (2 * Math.PI) / r.range(1.2, 2.2); o.phase = r.range(0, 6.28); break;
@@ -812,14 +850,22 @@ export class Course {
           case 'rotor': o.len = hw * 2 * 0.8; o.rate = r.sign() * r.range(40, 90) * DEG; o.phase = r.range(0, 6.28); o.u = 0; break;
           case 'fin': o.side = r.sign(); o.len = r.range(1.5, 2.5); o.h = r() < 0.5 ? TUBE_H : 2.2; break;
         }
-        chunk.obstacles.push(o);
-        cur.lastObsT = t;
+        // never inside a ramp: skip candidates whose footprint overlaps an avoid zone
+        const span = o.type === 'block' || o.type === 'zipper' ? [o.u - o.w / 2, o.u + o.w / 2] : [-hw, hw];
+        const blocked = avoid.some((a) => z <= a.zA + 2 && z >= a.zB - 2 && span[1] > a.uA - 0.3 && span[0] < a.uB + 0.3);
+        if (!blocked) { chunk.obstacles.push(o); cur.lastObsT = t; }
       }
       t += gapT();
     }
   }
 
-  pickWeighted(list) { const r = this.rng; let s = list.reduce((a, b) => a + b.w, 0), x = r() * s; for (const o of list) { x -= o.w; if (x <= 0) return o.id; } return list[0].id; }
+  pickWeighted(list) {
+    // rare obstacles are occasional curveballs; the common set does most of the work
+    const r = this.rng, w = (o) => (RARE_OBSTACLES.has(o.id) ? o.w * 0.2 : o.w);
+    let s = list.reduce((a, b) => a + w(b), 0), x = r() * s;
+    for (const o of list) { x -= w(o); if (x <= 0) return o.id; }
+    return list[0].id;
+  }
 
   // ---------------------------------------------------------------- validator
   // Sweeps a lateral "ghost" grid through the chunk using the predicted speed and
@@ -882,6 +928,15 @@ export class Course {
           lo = Math.max(lo, x0); hi = Math.min(hi, x1);
         }
         for (let i = Math.max(0, Math.ceil((lo - GX0) / GDX)); i <= Math.min(GN - 1, Math.floor((hi - GX0) / GDX)); i++) safe[i] = 1;
+      }
+      // optional ramps: once they rise above step height their sides are solid walls
+      for (const pl of chunk.platforms) {
+        if (pl.kind !== 'ramp' || st.z > pl.z0 || st.z < pl.z1) continue;
+        const i = Math.min(pl.wall.length - 1, Math.max(0, Math.round((pl.z0 - st.z) / DZ)));
+        if (pl.wall[i] < 0.35) continue;
+        pl.sample(st.z, s);
+        const lo = s.cx - s.hw - BALL_R - MARGIN, hi = s.cx + s.hw + BALL_R + MARGIN;
+        for (let k = Math.max(0, Math.ceil((lo - GX0) / GDX)); k <= Math.min(GN - 1, Math.floor((hi - GX0) / GDX)); k++) safe[k] = 0;
       }
       // obstacles near this z, at the predicted arrival time ± 0.15 s
       for (const o of chunk.obstacles) {
@@ -963,6 +1018,23 @@ export class Course {
     }
     out.cy = trackY(z); out.bank = 0; out.pl = null; out.cx = out.cx ?? 0;
     return out;
+  }
+
+  // did the ball run into the side of a raised ramp (rather than rolling onto it)?
+  hitRampSide(x, y, z, onPl, grounded) {
+    const s = this._s;
+    for (const c of this.chunks) {
+      if (z > c.zStart + 1 || z < c.zEnd - 1) continue;
+      for (const pl of c.platforms) {
+        if (pl.kind !== 'ramp' || pl === onPl || z > pl.z0 || z < pl.z1) continue;
+        pl.sample(z, s);
+        // rolling along the deck: touching the side counts; airborne (e.g. dropping off a
+        // ramp edge) only counts if the ball is well inside the ramp body
+        if (Math.abs(x - s.cx) > (grounded ? s.hw : s.hw - 0.25)) continue;
+        if (s.cy > y - BALL_R + 0.35) return true; // ramp top well above the ball's underside
+      }
+    }
+    return false;
   }
 
   hitObstacle(x, y, z, r, t) {

@@ -10,6 +10,7 @@ const S = (key, label, tip, section, def, options, extra = {}) => ({ key, label,
 
 export const SCHEMA = [
   // ---------------------------------------------------------------- Game
+  B('curves', 'Curvy sections', 'Thin curves, winding strips and corkscrews (applies from the next run).', 'Game', true),
   S('vehicle', 'Vehicle', 'Ride as the ball or a light cycle (same physics either way).', 'Game', 'ball', [['ball', 'Ball'], ['cycle', 'Light cycle']]),
 
   // ---------------------------------------------------------------- Performance

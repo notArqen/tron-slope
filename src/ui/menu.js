@@ -85,8 +85,8 @@ export class Menu {
     for (const b of box.querySelectorAll('button')) b.onclick = () => this.h.play(b.dataset.seed, this.startD());
   }
 
-  showTitle(best) {
-    this.title.querySelector('.m-best').textContent = best ? `best ${best}` : '';
+  showTitle(best, autoBest = 0) {
+    this.title.querySelector('.m-best').textContent = [best ? `best ${best}` : '', autoBest ? `autoplay ${autoBest}` : ''].filter(Boolean).join(' · ');
     this.title.hidden = false;
     document.body.classList.add('in-menu');
     requestAnimationFrame(() => this.title.querySelector('[data-act="play"]').focus({ preventScroll: true }));

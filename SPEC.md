@@ -160,3 +160,5 @@ Audio, menus beyond the death summary, leaderboards, cosmetics.
 - **A22 Biomes.** City styles cycle every ~900 m of distance: grid → glass → brutalist → industrial → void. The sequence is fixed, not per seed.
 - **A23 Track library.** The last 5 distinct seeds are kept automatically, and up to 20 can be saved. Both live in localStorage and show on the title screen.
 - **No power-ups, no pickups.** Owner decision.
+- **A24 Design rule: simple and consistent, with curveballs** (owner). A core set carries every run: straight, narrow, gap, thin, banked, steep, tunnel, winding and kicker sections, with blocks, walls, sliders and pistons as obstacles. Everything else is a curveball: ~10% of sections, never two in a row. Exotic obstacles appear at 20% of their normal weight.
+- **A25 Boosts** in every tunnel from d ≥ 0.15, plus on ~1 in 3 straights. **Ramp sides are solid**: hitting one from the deck is a crash, and the validator treats raised ramp sections as walls. **Tunnel roofs** carry blocks and sliders.

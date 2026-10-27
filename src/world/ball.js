@@ -150,6 +150,7 @@ export class Ball {
       this.dist += this.vt * dt;
       const srf = C.surfaceAt(this.x, this.z, C.clockAt(this.z), this.y, this.srf);
       if (srf && this.y - BALL_R <= srf.y + 0.05 && py - BALL_R >= srf.y - 0.6) {
+        if (!this.isSim) this.landed = Math.max(this.landed || 0, Math.min(1, (-this.vy - 4) / 16)); // landing impact 0..1 (feel)
         this.airT = 0;
         this.grounded = true; this.pl = srf.pl; this.u = srf.u;
         // world lateral velocity → deck-relative: remove the deck's own heading, or every
@@ -169,7 +170,7 @@ export class Ball {
     if (this.boosted) this.boosted = Math.max(0, this.boosted - dt);
     if (!this.dead && !godMode) {
       const tc = C.clockAt(this.z), hit = C.hitObstacle(this.x, this.y, this.z, BALL_R * 0.95, tc);
-      if (hit) this.kill('hit');
+      if (hit || C.hitRampSide(this.x, this.y, this.z, this.pl, this.grounded)) this.kill('hit');
     }
 
     // rolling: rotate about the axis perpendicular to world motion

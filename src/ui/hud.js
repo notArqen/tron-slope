@@ -2,6 +2,7 @@
 // reference stills), overall + per-seed best, seed label, and the death summary.
 const BEST_KEY = 'tron-slope.best.v1';
 const SEED_KEY = 'tron-slope.bestBySeed.v1';
+const BEST_AUTO_KEY = 'tron-slope.bestAuto.v1', SEED_AUTO_KEY = 'tron-slope.bestBySeedAuto.v1';
 const SEGS = { 0: 'abcdef', 1: 'bc', 2: 'abged', 3: 'abgcd', 4: 'fgbc', 5: 'afgcd', 6: 'afgedc', 7: 'abc', 8: 'abcdefg', 9: 'abcdfg' };
 const SEG_RECTS = { a: [1, 0, 4, 1], b: [5, 1, 1, 4], c: [5, 6, 1, 4], d: [1, 10, 4, 1], e: [0, 6, 1, 4], f: [0, 1, 1, 4], g: [1, 5, 4, 1] };
 
@@ -28,13 +29,17 @@ export class Hud {
     this.sumStats = this.sum.querySelector('.s-stats');
     this.sumSeed = this.sum.querySelector('input');
     this.sum.querySelector('form').addEventListener('submit', (e) => { e.preventDefault(); this.onSeedSubmit && this.onSeedSubmit(this.sumSeed.value); this.sumSeed.blur(); });
-    this.best = Number(load(BEST_KEY, 0)) || 0;
-    this.bySeed = load(SEED_KEY, {});
+    // manual and autoplay keep separate high scores (overall + per seed)
+    this.S = {
+      manual: { best: Number(load(BEST_KEY, 0)) || 0, bySeed: load(SEED_KEY, {}), keys: [BEST_KEY, SEED_KEY] },
+      auto: { best: Number(load(BEST_AUTO_KEY, 0)) || 0, bySeed: load(SEED_AUTO_KEY, {}), keys: [BEST_AUTO_KEY, SEED_AUTO_KEY] },
+    };
+    this.mode = 'manual';
     this._shown = -1;
   }
 
   startRun(seedStr) {
-    this.seedStr = seedStr; this.tainted = false; this.beating = false;
+    this.seedStr = seedStr; this.tainted = false; this.beating = false; this.mode = 'manual';
     this.sum.hidden = true;
     this.msgEl.textContent = ''; this.msgEl.className = 'msg';
     this.scoreEl.classList.remove('beating');
@@ -43,11 +48,18 @@ export class Hud {
   }
 
   // Autoplay runs never count toward bests
-  setAutoplay(on) { this.autoEl.hidden = !on; if (on) this.tainted = true; }
+  // score milestone: brief flash of the digits (CSS transition, not a keyframe, so repeats retarget cleanly)
+  pulse() { this.scoreEl.classList.add('pulse'); clearTimeout(this._pt); this._pt = setTimeout(() => this.scoreEl.classList.remove('pulse'), 160); }
+
+  // a run that used autoplay at any point is scored on the autoplay board
+  setAutoplay(on) { this.autoEl.hidden = !on; if (on) { this.mode = 'auto'; this.beating = false; this.scoreEl.classList.remove('beating'); } this.renderBest(); }
+  get best() { return this.S[this.mode].best; }
+  get bySeed() { return this.S[this.mode].bySeed; }
 
   renderBest() {
     const sb = this.bySeed[this.seedStr] || 0;
-    this.bestEl.textContent = this.best ? `best ${this.best}${sb && sb !== this.best ? ` · seed ${sb}` : ''}` : '';
+    const tag = this.mode === 'auto' ? 'autoplay best' : 'best';
+    this.bestEl.textContent = this.best ? `${tag} ${this.best}${sb && sb !== this.best ? ` · seed ${sb}` : ''}` : '';
   }
 
   frame(score, speed, godMode) {
@@ -60,11 +72,12 @@ export class Hud {
   crash(score, seedStr, cause) {
     this.last = { score, cause, newBest: false, newSeedBest: false };
     if (!this.tainted) {
-      if (score > this.best) { this.best = score; this.last.newBest = true; save(BEST_KEY, score); }
-      if (score > (this.bySeed[seedStr] || 0)) {
-        this.bySeed[seedStr] = score; this.last.newSeedBest = true;
-        const keys = Object.keys(this.bySeed); if (keys.length > 200) delete this.bySeed[keys[0]];
-        save(SEED_KEY, this.bySeed);
+      const B = this.S[this.mode];
+      if (score > B.best) { B.best = score; this.last.newBest = true; save(B.keys[0], score); }
+      if (score > (B.bySeed[seedStr] || 0)) {
+        B.bySeed[seedStr] = score; this.last.newSeedBest = true;
+        const keys = Object.keys(B.bySeed); if (keys.length > 200) delete B.bySeed[keys[0]];
+        save(B.keys[1], B.bySeed);
       }
     }
     this.msgEl.textContent = this.last.newBest ? `new best ${score}` : ({ hit: 'crashed', wall: 'hit the wall', fell: 'fell' }[cause] || 'crashed');
@@ -77,7 +90,7 @@ export class Hud {
     this.msgEl.textContent = '';
     this.sumScore.innerHTML = String(l.score).split('').map(digitSVG).join('');
     const sb = this.bySeed[this.seedStr] || 0;
-    this.sumStats.innerHTML = `<span>best <b>${this.best}</b>${l.newBest ? ' <i>new</i>' : ''}</span><span>this seed <b>${sb}</b>${l.newSeedBest && !l.newBest ? ' <i>new</i>' : ''}</span>${this.tainted ? '<span class="dim">autoplay / no-death run · not counted</span>' : ''}`;
+    this.sumStats.innerHTML = `<span>best <b>${this.best}</b>${l.newBest ? ' <i>new</i>' : ''}</span><span>this seed <b>${sb}</b>${l.newSeedBest && !l.newBest ? ' <i>new</i>' : ''}</span>${this.tainted ? '<span class="dim">no-death run · not counted</span>' : this.mode === 'auto' ? '<span class="dim">autoplay board</span>' : ''}`;
     this.sumSeed.value = this.seedStr;
     this.sum.hidden = false;
   }

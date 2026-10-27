@@ -101,7 +101,8 @@ const overlay = new Overlay(settings, perf, { probe: (key) => startProbe(key) })
 
 // ---------------------------------------------------------------- sizing / dynamic resolution
 let dynScale = 1, dynCooldown = 0, camRoll = 0;
-let idleFrameDone = false; // paused: draw once, then stop until something changes
+let idleFrameDone = false;
+let lookY = 0, heldBank = 0, surgeT = 0, landDip = 0, boostPunch = 0, lastHundred = 0; // feel: landing dip, boost jolt, score milestones // paused: draw once, then stop until something changes
 function internalSize() {
   const dpr = Math.min(devicePixelRatio || 1, S.maxDpr);
   const cw = innerWidth, ch = innerHeight;
@@ -174,14 +175,15 @@ let autoplay = false;     // Autoplay: the autopilot drives a real run (scores n
 function startRun(newSeed, { attract = false } = {}) {
   if (newSeed !== undefined && newSeed !== null) seed = newSeed >>> 0;
   course.minD = attract ? 0.35 : playD;
+  course.noCurves = !S.curves; // Game → Curvy sections
   if (!attract) history.replaceState(null, '', '#seed=' + seedToString(seed) + (course.minD ? '&d=' + course.minD : ''));
   course.reset(seed);
   ball.reset();
   ball.mesh.visible = true;
   city.reset(0); dys.reset(0); floaters.reset(0); cycle.reset();
   pipeline.historyValid = false;
-  camPos.set(0, ball.y + 2.6, 7.2);
-  deathT = -1; acc = 0;
+  camPos.set(0, ball.y + 2.6, 7.2); lookY = ball.y - 0.6; heldBank = 0;
+  deathT = -1; acc = 0; lastHundred = 0;
   phase = attract ? 'menu' : 'run';
   if (!attract) { tracks.played(seed); menu.hideTitle(); menu.hidePause(); hud.startRun(seedToString(seed)); hud.setAutoplay(autoplay); autopilot.reset(); }
 }
@@ -198,8 +200,8 @@ function toMenu() {
   document.getElementById('summary').hidden = true;
   history.replaceState(null, '', location.pathname);
   startRun(randomSeed(), { attract: true });
-  menu.renderTracks(tracks, seedToString, (s) => hud.bySeed[seedToString(s)] || 0);
-  menu.showTitle(hud.best);
+  menu.renderTracks(tracks, seedToString, (s) => hud.S.manual.bySeed[seedToString(s)] || 0);
+  menu.showTitle(hud.S.manual.best, hud.S.auto.best);
 }
 
 function pause() {
@@ -292,6 +294,19 @@ function frame(now) {
   if ((phase === 'run' && autoplay) || phase === 'menu') autopilot.think(ball, simDt);
   while (acc >= STEP) { if (phase === 'run' || phase === 'menu') stepSim(STEP); acc -= STEP; }
   ball.sync();
+  // feel: hard landings dip the camera, shake it, and spark; boosts punch the FOV
+  if (ball.landed) {
+    landDip = Math.max(landDip, ball.landed * 0.6); shakeImpact = Math.max(shakeImpact, ball.landed * 0.35);
+    particles.shardColor.copy(shared.uNeon.value);
+    particles.emit('shard', new THREE.Vector3(ball.x, ball.y - 0.5, ball.z), new THREE.Vector3(0, 0, -ball.vt * 0.5), Math.round(6 + ball.landed * 18));
+    ball.landed = 0;
+  }
+  landDip *= Math.exp(-dt * 6);
+  if (ball.boosted > 0.55 && boostPunch < 0.1) { boostPunch = 1; shakeImpact = Math.max(shakeImpact, 0.4); }
+  boostPunch *= Math.exp(-dt * 3);
+  // every 100 points: a power surge races down the grid and the score flashes
+  if (phase === 'run') { const h = Math.floor(score() / 100); if (h > lastHundred) { lastHundred = h; surgeT = 1; hud.pulse(); } }
+  surgeT = Math.max(0, surgeT - dt);
   {
     const alive = phase !== 'dying' && phase !== 'summary', isCycle = S.vehicle === 'cycle';
     ball.mesh.visible = alive && !isCycle;
@@ -321,7 +336,7 @@ function frame(now) {
   u.uFogColor.value.copy(wp.fogTint);
   u.uPower.value = wp.power;
   u.uFlicker.value = S.neonFlicker ? wp.flicker : 0;
-  u.uSurge.value = S.surges ? 1 : 0;
+  u.uSurge.value = (S.surges ? 1 : 0) + surgeT * 4;
   u.uWet.value = wp.wet;
   u.uRain.value = S.rain ? Math.min(1, wp.rain) : 0;
   u.uPuddle.value = S.puddles ? S.puddleCoverage : 0;
@@ -339,22 +354,26 @@ function frame(now) {
   course.centreAt(ball.z, ctr);
   // look further down the curve, and follow the track line more than the ball
   const cxAhead = course.centreAt(ball.z - 22, {}).cx;
-  const target = tmpV.set(ball.x * 0.5 + ctr.cx * 0.5, ball.y + 2.6, ball.z + 7.2);
-  camPos.lerp(target, 1 - Math.exp(-dt * 10));
-  camPos.z = target.z; // never lag behind along the run
+  const target = tmpV.set(ball.x * 0.5 + ctr.cx * 0.5, ball.y + 2.6 - landDip, ball.z + 7.2);
+  // feel: lateral follow stays tight, height eases (jumps read as air, not a glued camera)
+  camPos.x += (target.x - camPos.x) * (1 - Math.exp(-dt * 10));
+  camPos.y += (target.y - camPos.y) * (1 - Math.exp(-dt * 6)); // one constant rate: switching rates on takeoff/landing caused snaps
+  lookY += (ball.y - 0.6 - lookY) * (1 - Math.exp(-dt * 7));   // smoothed aim height (pinning it to the ball jerked the view)
+  camPos.z = target.z;
   camera.position.copy(camPos);
   let shake = 0;
   if (S.shake) shake = S.shakeAmt * (sp * 0.02 + weather.lightningFlash * 0.03 * (S.lightning ? 1 : 0) + shakeImpact * 0.25);
   camera.position.x += (Math.sin(simTime * 37.1) + Math.sin(simTime * 23.3)) * shake;
   camera.position.y += (Math.sin(simTime * 41.7) + Math.sin(simTime * 19.9)) * shake;
-  camLook.set(ball.x * 0.4 + cxAhead * 0.6, ball.y - 0.6, ball.z - 18);
+  camLook.set(ball.x * 0.4 + cxAhead * 0.6, lookY, ball.z - 18);
   camera.lookAt(camLook);
   // roll with the deck bank (max 12°)
-  camRoll += ((ball.grounded ? -ball.bank : 0) * 0.55 - camRoll) * (1 - Math.exp(-dt * 6));
+  if (ball.grounded) heldBank = ball.bank; // hold the roll through the air instead of snapping level
+  camRoll += (-heldBank * 0.55 - (ball.vu || 0) * 0.012 - camRoll) * (1 - Math.exp(-dt * 6)); // lean into steering
   camera.rotateZ(Math.max(-0.21, Math.min(0.21, camRoll)));
   // debug: window.__camOverride = (cam, ball) => {...} lets tooling place the camera (e.g. bike side view)
   if (window.__camOverride) window.__camOverride(camera, ball);
-  camera.fov = 62 + (S.fovKick ? S.fovKickAmt * sp : 0);
+  camera.fov = 62 + (S.fovKick ? S.fovKickAmt * Math.min(1.15, sp) + boostPunch * 7 : 0);
   camera.updateProjectionMatrix();
   camera.updateMatrixWorld();
   u.uCamPos.value.copy(camera.position);

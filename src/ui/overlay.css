@@ -192,3 +192,7 @@ body.in-menu #hud { display: none; }
 @media (hover: hover) and (pointer: fine) { .m-tracks button:hover { border-color: rgba(61, 255, 92, 0.5); } }
 #summary .s-save { font: inherit; font-size: 12px; color: #ffd56a; background: transparent; border: 1px solid rgba(255, 200, 60, 0.5); border-radius: 6px; padding: 5px 10px; cursor: pointer; }
 #summary .s-save.on { background: rgba(255, 200, 60, 0.15); }
+
+#hud .score { transition: transform 220ms var(--ease-out), filter 220ms var(--ease-out); }
+#hud .score.pulse { transform: translateX(-50%) scale(1.12); filter: brightness(1.8); transition-duration: 60ms; }
+@media (prefers-reduced-motion: reduce) { #hud .score.pulse { transform: translateX(-50%); } }
