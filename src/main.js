@@ -264,8 +264,9 @@ function die(cause) {
 }
 
 // first person / cockpit: bolted to the vehicle, so the view pitches, yaws, leans and drifts with it
+const neck = { yaw: 0, vyaw: 0, pitch: 0, vpitch: 0, roll: 0, vroll: 0, sx: 0, vsx: 0, sy: 0, vsy: 0, pvx: 0, pvy: 0 };
 const head = { yaw: 0, pitch: 0, roll: 0 }, _mq = new THREE.Vector3();
-function mountCamera(rig, shake) {
+function mountCamera(rig, shake, simDt) {
   let yaw, pitch, roll, base, off;
   if (S.vehicle === 'cycle') {
     yaw = cycle.yaw + cycle.slide; pitch = cycle.pitch; roll = cycle.lean;
@@ -282,10 +283,24 @@ function mountCamera(rig, shake) {
     base = _v3.set(ball.x, ball.y, ball.z);
     off = S.camera === 'cockpit' ? _mq.set(0, 0.75, 0.6) : _mq.set(0, 0.3, -0.45);
   }
-  _eul.set(pitch + (S.camera === 'cockpit' ? -0.09 : -0.03), yaw, roll, 'YXZ');
-  camera.quaternion.setFromEuler(_eul);
+  // a rider's head, not a GoPro: it lags the bike on a soft neck spring, keeps the horizon about half-level,
+  // and sways against the bike's sideways/vertical acceleration before settling back
+  const dt = Math.min(simDt, 1 / 30), n = neck;
+  if (dt > 0) {
+    const spring = (key, target, k, c) => { n['v' + key] += ((target - n[key]) * k - n['v' + key] * c) * dt; n[key] += n['v' + key] * dt; };
+    let dy = yaw - n.yaw; dy -= Math.round(dy / (Math.PI * 2)) * Math.PI * 2; // shortest way round
+    spring('yaw', n.yaw + dy, 140, 18);
+    spring('pitch', pitch * 0.6, 110, 16);
+    spring('roll', roll * 0.5, 90, 13);
+    const ax = (ball.vel.x - n.pvx) / dt, ay = (ball.vel.y - n.pvy) / dt; n.pvx = ball.vel.x; n.pvy = ball.vel.y;
+    spring('sx', Math.max(-0.25, Math.min(0.25, -ax * 0.004)), 60, 9);
+    spring('sy', Math.max(-0.2, Math.min(0.2, -ay * 0.003)), 70, 10);
+  }
   _eul.set(pitch, yaw, roll, 'YXZ');
   camera.position.copy(off.applyEuler(_eul).add(base));
+  camera.position.x += n.sx; camera.position.y += n.sy;
+  _eul.set(n.pitch + (S.camera === 'cockpit' ? -0.09 : -0.03), n.yaw, n.roll, 'YXZ');
+  camera.quaternion.setFromEuler(_eul);
   camera.position.x += (Math.sin(simTime * 37.1) + Math.sin(simTime * 23.3)) * shake;
   camera.position.y += (Math.sin(simTime * 41.7) + Math.sin(simTime * 19.9)) * shake;
 }
@@ -523,7 +538,7 @@ function frame(now) {
   // roll with the deck bank (max 12°)
   camRoll += (0 - (ball.vu || 0) * (ball.drifting ? 0.02 : 0.012) - camRoll) * (1 - Math.exp(-dt * 6)); // lean into steering
   camera.rotateZ(Math.max(-0.21, Math.min(0.21, camRoll)));
-  if (rig.inside) mountCamera(rig, shake);
+  if (rig.inside) mountCamera(rig, shake, simDt);
   // debug: window.__camOverride = (cam, ball) => {...} lets tooling place the camera (e.g. bike side view)
   if (window.__camOverride) window.__camOverride(camera, ball);
   camera.fov = 62 + (S.fovKick ? S.fovKickAmt * Math.min(1.15, sp) + boostPunch * 7 : 0);
