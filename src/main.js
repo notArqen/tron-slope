@@ -283,18 +283,18 @@ function mountCamera(rig, shake, simDt) {
     base = _v3.set(ball.x, ball.y, ball.z);
     off = S.camera === 'cockpit' ? _mq.set(0, 0.75, 0.6) : _mq.set(0, 0.3, -0.45);
   }
-  // a rider's head, not a GoPro: it lags the bike on a soft neck spring, keeps the horizon about half-level,
+  // a rider's head, not a GoPro: it lags the bike on a soft neck spring, only slightly steadies the tilt,
   // and sways against the bike's sideways/vertical acceleration before settling back
   const dt = Math.min(simDt, 1 / 30), n = neck;
   if (dt > 0) {
     const spring = (key, target, k, c) => { n['v' + key] += ((target - n[key]) * k - n['v' + key] * c) * dt; n[key] += n['v' + key] * dt; };
     let dy = yaw - n.yaw; dy -= Math.round(dy / (Math.PI * 2)) * Math.PI * 2; // shortest way round
-    spring('yaw', n.yaw + dy, 140, 18);
-    spring('pitch', pitch * 0.6, 110, 16);
-    spring('roll', roll * 0.5, 90, 13);
+    spring('yaw', n.yaw + dy, 300, 34);   // stiff + critically damped: a beat of lag, no wobble
+    spring('pitch', pitch * 0.85, 260, 32);
+    spring('roll', roll * 0.85, 240, 31);  // mostly locked to the bike's tilt
     const ax = (ball.vel.x - n.pvx) / dt, ay = (ball.vel.y - n.pvy) / dt; n.pvx = ball.vel.x; n.pvy = ball.vel.y;
-    spring('sx', Math.max(-0.25, Math.min(0.25, -ax * 0.004)), 60, 9);
-    spring('sy', Math.max(-0.2, Math.min(0.2, -ay * 0.003)), 70, 10);
+    spring('sx', Math.max(-0.12, Math.min(0.12, -ax * 0.002)), 120, 22);
+    spring('sy', Math.max(-0.1, Math.min(0.1, -ay * 0.0015)), 120, 22);
   }
   _eul.set(pitch, yaw, roll, 'YXZ');
   camera.position.copy(off.applyEuler(_eul).add(base));
