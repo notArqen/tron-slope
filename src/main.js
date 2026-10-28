@@ -263,6 +263,33 @@ function die(cause) {
   hud.crash(score(), seedToString(seed), cause, { dist: ball.dist, top: topSpeed, time: ball.runTime });
 }
 
+// first person / cockpit: bolted to the vehicle, so the view pitches, yaws, leans and drifts with it
+const head = { yaw: 0, pitch: 0, roll: 0 }, _mq = new THREE.Vector3();
+function mountCamera(rig, shake) {
+  let yaw, pitch, roll, base, off;
+  if (S.vehicle === 'cycle') {
+    yaw = cycle.yaw + cycle.slide; pitch = cycle.pitch; roll = cycle.lean;
+    const h = wreckHull(); let top = -1e9, front = 1e9, back = -1e9;
+    for (const c of h) { top = Math.max(top, c.y); front = Math.min(front, c.z); back = Math.max(back, c.z); }
+    base = _v3.set(ball.x, ball.y - 0.55, ball.z); // where cycle.update parks the bike
+    off = S.camera === 'cockpit' ? _mq.set(0, top + 0.12, front + (back - front) * 0.55) : _mq.set(0, top * 0.62, front - 0.05);
+  } else {
+    // the ball spins, so the head follows its heading + deck bank instead
+    const v = ball.vel, sp = Math.hypot(v.x, v.z), k = 1 - Math.exp(-simDt * 10);
+    if (sp > 0.5) { head.yaw += (Math.atan2(-v.x, -v.z) - head.yaw) * k; head.pitch += (Math.atan2(v.y, sp) - head.pitch) * k; }
+    head.roll += ((ball.grounded ? -ball.bank : 0) - (ball.vu || 0) * 0.03 - head.roll) * k;
+    yaw = head.yaw; pitch = head.pitch; roll = head.roll;
+    base = _v3.set(ball.x, ball.y, ball.z);
+    off = S.camera === 'cockpit' ? _mq.set(0, 0.75, 0.6) : _mq.set(0, 0.3, -0.45);
+  }
+  _eul.set(pitch + (S.camera === 'cockpit' ? -0.09 : -0.03), yaw, roll, 'YXZ');
+  camera.quaternion.setFromEuler(_eul);
+  _eul.set(pitch, yaw, roll, 'YXZ');
+  camera.position.copy(off.applyEuler(_eul).add(base));
+  camera.position.x += (Math.sin(simTime * 37.1) + Math.sin(simTime * 23.3)) * shake;
+  camera.position.y += (Math.sin(simTime * 41.7) + Math.sin(simTime * 19.9)) * shake;
+}
+
 // crash tumble: ballistic body that bounces along whatever deck is under it
 const _surf = {}, _eul = new THREE.Euler(), _v3 = new THREE.Vector3(), WRECK_DY = -0.3;
 let _hull = null;
@@ -467,7 +494,7 @@ function frame(now) {
   // camera follows the ball only, never the track geometry: centreline lookups jump
   // between lane platforms (splits/forks/hole grids) and that was the snapping
   // camera rigs (C cycles, 1–7 pick): back/up offsets, look-ahead, smoothing; never track geometry
-  const rig = CAMS[S.camera] || CAMS.chase;
+  const rig = (wreck && CAMS[S.camera]?.inside) ? CAMS.chase : (CAMS[S.camera] || CAMS.chase); // no riding inside a tumbling wreck
   // falling from a jump: chase rigs dip and pull back so the landing zone stays visible
   // only big drops: dip under the bike once it's well above whatever deck it will land on (small hops stay put)
   let bigAir = 0;
@@ -496,6 +523,7 @@ function frame(now) {
   // roll with the deck bank (max 12°)
   camRoll += (0 - (ball.vu || 0) * (ball.drifting ? 0.02 : 0.012) - camRoll) * (1 - Math.exp(-dt * 6)); // lean into steering
   camera.rotateZ(Math.max(-0.21, Math.min(0.21, camRoll)));
+  if (rig.inside) mountCamera(rig, shake);
   // debug: window.__camOverride = (cam, ball) => {...} lets tooling place the camera (e.g. bike side view)
   if (window.__camOverride) window.__camOverride(camera, ball);
   camera.fov = 62 + (S.fovKick ? S.fovKickAmt * Math.min(1.15, sp) + boostPunch * 7 : 0);
