@@ -252,7 +252,7 @@ function die(cause) {
       particles.emit('shard', ball.mesh.position, new THREE.Vector3(v.x, 4, v.z * 0.7), 70);
     }
     const r = () => Math.random() * 2 - 1;
-    wreck = { vx: v.x + r() * 6, vy: Math.max(v.y, 0) + 5 + Math.random() * 3, vz: v.z * 0.55,
+    wreck = { vx: v.x + r() * 3, vy: Math.max(v.y, 0) + 5 + Math.random() * 3, vz: v.z * 0.55,
       rx: 0, ry: 0, rz: 0, wx: 8 + r() * 4, wy: r() * 6, wz: r() * 9, still: 0 };
   } else {
     ball.mesh.visible = false;
@@ -294,8 +294,18 @@ function stepWreck(dt, isCycle) {
     if (ball.y < floor) {
       ball.y = floor;
       if (w.vy < 0) { w.vy = -w.vy * 0.35; if (isCycle) { w.wx *= 0.6; w.wz *= 0.6; } } // the hull scrapes, so tumbling bleeds faster
-      const f = Math.exp(-dt * 2.5);
-      w.vx *= f; w.vz *= f; w.wx *= f; w.wy *= f; w.wz *= f;
+      if (isCycle) {
+        // gravity wins: a bike can't balance on a wheel, so on the deck it falls onto its side and slides
+        const k = 1 - Math.exp(-dt * 7), tx = Math.round(w.rx / Math.PI) * Math.PI, tz = (Math.floor(w.rz / Math.PI) + 0.5) * Math.PI;
+        w.rx += (tx - w.rx) * k; w.rz += (tz - w.rz) * k;
+        const a = Math.exp(-dt * 8); w.wx *= a; w.wz *= a; w.wy *= Math.exp(-dt * 2);
+        const f = Math.exp(-dt * 1.1); w.vx *= f; w.vz *= f;  // metal on grid: a long slide
+        const sp = Math.hypot(w.vx, w.vz);
+        if (sp > 4) { particles.shardColor.setRGB(1, 0.55, 0.15); particles.emit('shard', _v3.set(ball.x, _surf.y + 0.1, ball.z), new THREE.Vector3(-w.vx * 0.3, 2, -w.vz * 0.3), 2); }
+      } else {
+        const f = Math.exp(-dt * 2.5);
+        w.vx *= f; w.vz *= f; w.wx *= f; w.wy *= f; w.wz *= f;
+      }
       if (Math.abs(w.vy) > 3) shakeImpact = Math.max(shakeImpact, 0.25);
     }
     if (Math.hypot(w.vx, w.vy, w.vz) < 1.5) w.still += dt;
