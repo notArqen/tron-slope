@@ -294,12 +294,14 @@ function mountCamera(rig, shake, simDt) {
     n.lead += (Math.max(-0.14, Math.min(0.14, yawRate * 0.12)) - n.lead) * (1 - Math.exp(-dt * 4));
     spring('yaw', n.yaw + dy + n.lead, 300, 34);   // stiff + critically damped: a beat of lag, no wobble
     spring('pitch', pitch * 0.85 - landDip * 0.06, 260, 32); // small nod when the suspension takes a landing
-    spring('roll', roll * 0.85, 240, 31);  // mostly locked to the bike's tilt
+    spring('roll', roll * 0.7, 240, 31);   // follows the tilt, a bit steadier than the bike itself
     const ax = (ball.vel.x - n.pvx) / dt, ay = (ball.vel.y - n.pvy) / dt; n.pvx = ball.vel.x; n.pvy = ball.vel.y;
     spring('sx', Math.max(-0.12, Math.min(0.12, -ax * 0.002)), 120, 22);
     spring('sy', Math.max(-0.1, Math.min(0.1, -ay * 0.0015)) - landDip * 0.12, 120, 22);
   }
-  _eul.set(pitch, yaw, roll, 'YXZ');
+  // the head balances over the wheels' contact patch: the bike leans fully underneath, but the head only drifts
+  // a third as far sideways, so in view the canopy swings through the turn instead of the whole world rolling
+  _eul.set(pitch, yaw, roll * 0.35, 'YXZ');
   camera.position.copy(off.applyEuler(_eul).add(base));
   camera.position.x += n.sx; camera.position.y += n.sy;
   // faint road buzz through the frame, rising with speed (not a wobble — a hum)
