@@ -263,18 +263,37 @@ function die(cause) {
 }
 
 // crash tumble: ballistic body that bounces along whatever deck is under it
-const _surf = {};
+const _surf = {}, _eul = new THREE.Euler(), _v3 = new THREE.Vector3(), WRECK_DY = -0.3;
+let _hull = null;
+// corners of the bike's bounding box in its own frame (measured once, unrotated)
+function wreckHull() {
+  if (_hull) return _hull;
+  const g = cycle.group, r = g.rotation.clone(), pr = cycle.pivot.rotation.clone(), p = g.position.clone();
+  g.rotation.set(0, 0, 0); cycle.pivot.rotation.set(0, 0, 0); g.position.set(0, 0, 0); g.updateMatrixWorld(true);
+  const bx = new THREE.Box3().setFromObject(g);
+  g.rotation.copy(r); cycle.pivot.rotation.copy(pr); g.position.copy(p); g.updateMatrixWorld(true);
+  _hull = [];
+  for (const x of [bx.min.x, bx.max.x]) for (const y of [bx.min.y, bx.max.y]) for (const z of [bx.min.z, bx.max.z]) _hull.push(new THREE.Vector3(x, y, z));
+  return _hull;
+}
 function stepWreck(dt, isCycle) {
   const w = wreck;
   if (dt > 0 && !w.fell) {
     w.vy -= 30 * dt;
     ball.x += w.vx * dt; ball.y += w.vy * dt; ball.z += w.vz * dt;
     w.rx += w.wx * dt; w.ry += w.wy * dt; w.rz += w.wz * dt;
-    const pl = course.surfaceAt(ball.x, ball.z, course.clockAt(ball.z), ball.y + 0.5, _surf);
-    const floor = pl ? _surf.y + 0.4 : -1e9;
+    // the bike collides with its whole tumbling hull, not just its centre: lowest rotated corner sits on the deck
+    let low = 0.4;
+    if (isCycle) {
+      _eul.set(w.rx, cycle.yaw + w.ry, w.rz, 'YXZ');
+      low = 0;
+      for (const c of wreckHull()) low = Math.max(low, -(_v3.copy(c).applyEuler(_eul).y + WRECK_DY));
+    }
+    const pl = course.surfaceAt(ball.x, ball.z, course.clockAt(ball.z), ball.y + 0.5 + low, _surf);
+    const floor = pl ? _surf.y + low : -1e9;
     if (ball.y < floor) {
       ball.y = floor;
-      if (w.vy < 0) w.vy = -w.vy * 0.35;
+      if (w.vy < 0) { w.vy = -w.vy * 0.35; if (isCycle) { w.wx *= 0.6; w.wz *= 0.6; } } // the hull scrapes, so tumbling bleeds faster
       const f = Math.exp(-dt * 2.5);
       w.vx *= f; w.vz *= f; w.wx *= f; w.wy *= f; w.wz *= f;
       if (Math.abs(w.vy) > 3) shakeImpact = Math.max(shakeImpact, 0.25);
@@ -285,7 +304,7 @@ function stepWreck(dt, isCycle) {
   if (isCycle) {
     const g = cycle.group;
     g.visible = true;
-    g.position.set(ball.x, ball.y - 0.3, ball.z);
+    g.position.set(ball.x, ball.y + WRECK_DY, ball.z);
     g.rotation.set(w.rx, cycle.yaw + w.ry, w.rz, 'YXZ');
   } else {
     ball.mesh.position.set(ball.x, ball.y, ball.z);
