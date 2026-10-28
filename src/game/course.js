@@ -134,6 +134,7 @@ function uFromX(x, cx, hc, th) { return (x - cx - hc * Math.sin(th)) / Math.cos(
 function box(o) { return o || { x: 0, y: 0, z: 0, hx: 0, hy: 0, hz: 0, yaw: 0, roll: 0, ghost: false }; }
 
 export function obstacleBoxes(o, t, out) {
+  if (o.smashed) return 0;                                    // broken on impact: gone
   const pl = o.pl, s = pl.geo(o.z, t, o._s || (o._s = {}));   // includes shuttle slide + tunnel roll
   const hc = pl.pivot, th = s.th;
   let n = 0;

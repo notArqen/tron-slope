@@ -59,7 +59,7 @@ export class Ball {
     this.speed = V_MIN; this.minSpeed = V_MIN; this.maxSpeed = V_MAX; this.boost = 0; this.airT = 0;
     this.vx = 0; this.vy = 0;
     this.grounded = true; this.pl = null;
-    this.dead = false; this.deathCause = null;
+    this.dead = false; this.deathCause = null; this.hitObj = null;
     this.dist = 0; this.runTime = 0;
     this.input = 0;
     this.q = new THREE.Quaternion();
@@ -178,7 +178,7 @@ export class Ball {
     if (this.boosted) this.boosted = Math.max(0, this.boosted - dt);
     if (!this.dead && !godMode) {
       const tc = C.clockAt(this.z), hit = C.hitObstacle(this.x, this.y, this.z, BALL_R * 0.95, tc);
-      if (hit || C.hitRampSide(this.x, this.y, this.z, this.pl, this.grounded)) this.kill('hit');
+      if (hit || C.hitRampSide(this.x, this.y, this.z, this.pl, this.grounded)) { this.hitObj = hit || null; this.kill('hit'); }
     }
 
     // rolling: rotate about the axis perpendicular to world motion

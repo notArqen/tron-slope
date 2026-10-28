@@ -187,6 +187,7 @@ function startProbe(key) {
 
 // ---------------------------------------------------------------- game state
 // menu (attract demo) → run ⇄ paused → dying (slow-mo, shards, glitch) → summary → run | menu
+let wreck = null; // tumbling crash body (cosmetic; the run already ended)
 let simTime = 0, deathT = -1, glitch = 0, shakeImpact = 0, phase = 'menu';
 const STEP = 1 / 120;
 let acc = 0;
@@ -208,7 +209,7 @@ function startRun(newSeed, { attract = false } = {}) {
   city.reset(0); dys.reset(0); floaters.reset(0); cycle.reset();
   pipeline.historyValid = false;
   camPos.set(0, ball.y + 2.6, 7.2); lookY = ball.y - 0.6; lookX = ball.x; heldBank = 0;
-  deathT = -1; acc = 0; lastHundred = 0; topSpeed = 0;
+  deathT = -1; wreck = null; acc = 0; lastHundred = 0; topSpeed = 0;
   phase = attract ? 'menu' : 'run';
   if (!attract) { tracks.played(seed); menu.hideTitle(); menu.hidePause(); hud.startRun(seedToString(seed)); hud.setAutoplay(autoplay); autopilot.reset(); }
 }
@@ -242,11 +243,54 @@ function resume() { if (phase === 'paused') { phase = 'run'; menu.hidePause(); i
 function die(cause) {
   if (deathT >= 0) return;
   deathT = 0; glitch = 1; shakeImpact = 1; phase = 'dying';
-  ball.mesh.visible = false;
-  // shatter into grid shards
-  particles.shardColor.copy(shared.uNeon.value);
-  particles.emit('shard', ball.mesh.position, new THREE.Vector3(ball.vx || 0, 0, -ball.speed), 60);
+  const v = ball.vel;
+  if (cause === 'hit' || cause === 'wall') {
+    // the obstacle breaks; we keep most of our momentum and tumble on
+    if (ball.hitObj) {
+      ball.hitObj.smashed = true;
+      particles.shardColor.copy(shared.uNeon2.value);
+      particles.emit('shard', ball.mesh.position, new THREE.Vector3(v.x, 4, v.z * 0.7), 70);
+    }
+    const r = () => Math.random() * 2 - 1;
+    wreck = { vx: v.x + r() * 6, vy: Math.max(v.y, 0) + 5 + Math.random() * 3, vz: v.z * 0.55,
+      rx: 0, ry: 0, rz: 0, wx: 8 + r() * 4, wy: r() * 6, wz: r() * 9, still: 0 };
+  } else {
+    ball.mesh.visible = false;
+    particles.shardColor.copy(shared.uNeon.value);
+    particles.emit('shard', ball.mesh.position, new THREE.Vector3(ball.vx || 0, 0, -ball.speed), 60);
+  }
   hud.crash(score(), seedToString(seed), cause, { dist: ball.dist, top: topSpeed, time: ball.runTime });
+}
+
+// crash tumble: ballistic body that bounces along whatever deck is under it
+const _surf = {};
+function stepWreck(dt, isCycle) {
+  const w = wreck;
+  if (dt > 0 && !w.fell) {
+    w.vy -= 30 * dt;
+    ball.x += w.vx * dt; ball.y += w.vy * dt; ball.z += w.vz * dt;
+    w.rx += w.wx * dt; w.ry += w.wy * dt; w.rz += w.wz * dt;
+    const pl = course.surfaceAt(ball.x, ball.z, course.clockAt(ball.z), ball.y + 0.5, _surf);
+    const floor = pl ? _surf.y + 0.4 : -1e9;
+    if (ball.y < floor) {
+      ball.y = floor;
+      if (w.vy < 0) w.vy = -w.vy * 0.35;
+      const f = Math.exp(-dt * 2.5);
+      w.vx *= f; w.vz *= f; w.wx *= f; w.wy *= f; w.wz *= f;
+      if (Math.abs(w.vy) > 3) shakeImpact = Math.max(shakeImpact, 0.25);
+    }
+    if (Math.hypot(w.vx, w.vy, w.vz) < 1.5) w.still += dt;
+    if (!pl && ball.y < course.centreAt(ball.z, {}).cy - 25) w.fell = true;
+  }
+  if (isCycle) {
+    const g = cycle.group;
+    g.visible = true;
+    g.position.set(ball.x, ball.y - 0.3, ball.z);
+    g.rotation.set(w.rx, cycle.yaw + w.ry, w.rz, 'YXZ');
+  } else {
+    ball.mesh.position.set(ball.x, ball.y, ball.z);
+    ball.mesh.rotation.set(w.rx, w.ry, w.rz);
+  }
 }
 
 function stepSim(dt) {
@@ -346,14 +390,15 @@ function frame(now) {
   {
     const alive = phase !== 'dying' && phase !== 'summary', isCycle = S.vehicle === 'cycle';
     const fp = hideRider && S.camera === 'first';
-    ball.mesh.visible = alive && !isCycle && !hideRider;
+    ball.mesh.visible = (alive || !!wreck) && !isCycle && !hideRider;
     cycle.update(ball, simDt, isCycle, alive && !fp);
+    if (wreck) stepWreck(simDt, isCycle);
   }
   course.fill(ball.z, 1);
   courseView.update(course.clockAt(ball.z), ball.z);
   if (deathT >= 0) {
     deathT += dt;
-    if (deathT > 1.2 && phase === 'dying') { phase = 'summary'; hud.showSummary(); }
+    if (phase === 'dying' && (wreck ? deathT > 2 || wreck.still > 0.4 || wreck.fell : deathT > 1.2)) { phase = 'summary'; hud.showSummary(); }
     if (autoplay && phase === 'summary' && deathT > 3.2) startRun(randomSeed()); // ambience: keep rolling
   }
   glitch = Math.max(0, glitch - dt * 0.9);
