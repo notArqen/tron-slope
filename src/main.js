@@ -91,6 +91,31 @@ const worldMaterials = [];
 for (const l of layers) l.scene.traverse((o) => { if (o.material && !worldMaterials.includes(o.material)) worldMaterials.push(o.material); });
 for (const mtl of [...courseView.materials, ...cycle.materials]) if (!worldMaterials.includes(mtl)) worldMaterials.push(mtl);
 
+// ---------------------------------------------------------------- camera rigs
+const CAMS = {
+  chase: { back: 7.2, up: 2.6, look: 18, lookUp: -0.6, rate: 6 },
+  close: { back: 4.2, up: 1.5, look: 14, lookUp: -0.2, rate: 9 },
+  far: { back: 13, up: 5.5, look: 26, lookUp: -1.2, rate: 4 },
+  cinema: { back: 6, up: 2.2, look: 16, lookUp: -0.4, rate: 2.5, swing: 5 },
+  drone: { back: 8, up: 12, look: 8, lookUp: -2, rate: 3 },
+  first: { back: 0.05, up: 0.35, look: 30, lookUp: 0.1, rate: 25, inside: true },
+  cockpit: { back: 0.9, up: 1.15, look: 30, lookUp: 0.2, rate: 25, inside: true },
+};
+let camMsgT = 0;
+const CAM_ORDER = ['chase', 'close', 'far', 'cinema', 'drone', 'first', 'cockpit'];
+addEventListener('keydown', (e) => {
+  if (phase !== 'run' || e.defaultPrevented || e.target.closest?.('#overlay, input')) return;
+  let i = -1;
+  if (e.code === 'KeyC') i = (CAM_ORDER.indexOf(S.camera) + 1) % CAM_ORDER.length;
+  else if (/^Digit[1-7]$/.test(e.code)) i = Number(e.code.slice(5)) - 1;
+  if (i >= 0) {
+    settings.set('camera', CAM_ORDER[i]);
+    const label = ['chase', 'close chase', 'far chase', 'cinematic', 'drone', 'first person', 'cockpit'][i];
+    hud.msgEl.textContent = `camera · ${label}`; hud.msgEl.className = 'msg newbest';
+    clearTimeout(camMsgT); camMsgT = setTimeout(() => { if (hud.msgEl.textContent.startsWith('camera')) hud.msgEl.textContent = ''; }, 900);
+  }
+});
+
 // ---------------------------------------------------------------- HUD + scores
 const hud = new Hud();
 const tracks = new Tracks();
@@ -102,7 +127,7 @@ const overlay = new Overlay(settings, perf, { probe: (key) => startProbe(key) })
 // ---------------------------------------------------------------- sizing / dynamic resolution
 let dynScale = 1, dynCooldown = 0, camRoll = 0;
 let idleFrameDone = false;
-let topSpeed = 0, lookX = 0, lookY = 0, heldBank = 0, surgeT = 0, landDip = 0, boostPunch = 0, lastHundred = 0; // feel: landing dip, boost jolt, score milestones // paused: draw once, then stop until something changes
+let airDip = 0, hideRider = false, topSpeed = 0, lookX = 0, lookY = 0, heldBank = 0, surgeT = 0, landDip = 0, boostPunch = 0, lastHundred = 0; // feel: landing dip, boost jolt, score milestones // paused: draw once, then stop until something changes
 function internalSize() {
   const dpr = Math.min(devicePixelRatio || 1, S.maxDpr);
   const cw = innerWidth, ch = innerHeight;
@@ -315,8 +340,9 @@ function frame(now) {
   surgeT = Math.max(0, surgeT - dt);
   {
     const alive = phase !== 'dying' && phase !== 'summary', isCycle = S.vehicle === 'cycle';
-    ball.mesh.visible = alive && !isCycle;
-    cycle.update(ball, simDt, isCycle, alive);
+    const fp = hideRider && S.camera === 'first';
+    ball.mesh.visible = alive && !isCycle && !hideRider;
+    cycle.update(ball, simDt, isCycle, alive && !fp);
   }
   course.fill(ball.z, 1);
   courseView.update(course.clockAt(ball.z), ball.z);
@@ -360,23 +386,27 @@ function frame(now) {
   course.centreAt(ball.z, ctr);
   // camera follows the ball only, never the track geometry: centreline lookups jump
   // between lane platforms (splits/forks/hole grids) and that was the snapping
-  const target = tmpV.set(ball.x, ball.y + 2.6 - landDip, ball.z + 7.2);
-  // feel: lateral follow stays tight, height eases (jumps read as air, not a glued camera)
-  camPos.x += (target.x - camPos.x) * (1 - Math.exp(-dt * 6));
-  // vertical follow: tight, with a little lead along the ball's vertical velocity so long
-  // drops stay framed (a loose follow left the ball sinking to the bottom of the screen)
-  const vLead = Math.max(-3, Math.min(1.5, (ball.grounded ? 0 : ball.vy) * 0.08));
-  camPos.y += (target.y + vLead - camPos.y) * (1 - Math.exp(-dt * 12));
-  lookY += (ball.y - 0.6 + vLead - lookY) * (1 - Math.exp(-dt * 14));   // smoothed aim height (pinning it to the ball jerked the view)
+  // camera rigs (C cycles, 1–7 pick): back/up offsets, look-ahead, smoothing; never track geometry
+  const rig = CAMS[S.camera] || CAMS.chase;
+  // falling from a jump: chase rigs dip and pull back so the landing zone stays visible
+  const fallDip = rig.inside ? 0 : Math.max(0, Math.min(1.6, (ball.grounded ? 0 : -ball.vy) * 0.07));
+  airDip += (fallDip - airDip) * (1 - Math.exp(-dt * 5));
+  const swing = rig.swing ? Math.sin(simTime * 0.35) * rig.swing : 0;
+  const target = tmpV.set(ball.x + swing, ball.y + rig.up - landDip - airDip, ball.z + rig.back + airDip * 0.8);
+  camPos.x += (target.x - camPos.x) * (1 - Math.exp(-dt * rig.rate));
+  const vLead = rig.inside ? 0 : Math.max(-3, Math.min(1.5, (ball.grounded ? 0 : ball.vy) * 0.08));
+  camPos.y += (target.y + vLead - camPos.y) * (1 - Math.exp(-dt * (rig.inside ? 30 : 12)));
+  lookY += (ball.y + rig.lookUp + vLead - lookY) * (1 - Math.exp(-dt * (rig.inside ? 30 : 14)));
   camPos.z = target.z;
   camera.position.copy(camPos);
   let shake = 0;
-  if (S.shake) shake = S.shakeAmt * (sp * 0.02 + weather.lightningFlash * 0.03 * (S.lightning ? 1 : 0) + shakeImpact * 0.25);
+  if (S.shake) shake = S.shakeAmt * (sp * 0.02 + weather.lightningFlash * 0.03 * (S.lightning ? 1 : 0) + shakeImpact * 0.25) * (rig.inside ? 0.5 : 1);
   camera.position.x += (Math.sin(simTime * 37.1) + Math.sin(simTime * 23.3)) * shake;
   camera.position.y += (Math.sin(simTime * 41.7) + Math.sin(simTime * 19.9)) * shake;
-  lookX += (ball.x - lookX) * (1 - Math.exp(-dt * 5));
-  camLook.set(lookX, lookY, ball.z - 18);
+  lookX += (ball.x - lookX) * (1 - Math.exp(-dt * (rig.inside ? 20 : 5)));
+  camLook.set(lookX, lookY, ball.z - rig.look);
   camera.lookAt(camLook);
+  hideRider = !!rig.inside;
   // roll with the deck bank (max 12°)
   camRoll += (0 - (ball.vu || 0) * 0.012 - camRoll) * (1 - Math.exp(-dt * 6)); // lean into steering
   camera.rotateZ(Math.max(-0.21, Math.min(0.21, camRoll)));

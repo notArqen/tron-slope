@@ -11,6 +11,7 @@ const S = (key, label, tip, section, def, options, extra = {}) => ({ key, label,
 export const SCHEMA = [
   // ---------------------------------------------------------------- Game
   B('curves', 'Curvy sections', 'Thin curves, winding strips and corkscrews (applies from the next run).', 'Game', false),
+  S('camera', 'Camera', 'Camera rig (C cycles, 1–7 picks).', 'Game', 'chase', [['chase', '1 Chase'], ['close', '2 Close chase'], ['far', '3 Far chase'], ['cinema', '4 Cinematic'], ['drone', '5 Drone'], ['first', '6 First person'], ['cockpit', '7 Cockpit']]),
   S('vehicle', 'Vehicle', 'Ride as the ball or a light cycle (same physics either way).', 'Game', 'ball', [['ball', 'Ball'], ['cycle', 'Light cycle']]),
 
   // ---------------------------------------------------------------- Performance
