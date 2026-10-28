@@ -264,7 +264,7 @@ function die(cause) {
 }
 
 // first person / cockpit: bolted to the vehicle, so the view pitches, yaws, leans and drifts with it
-const neck = { yaw: 0, vyaw: 0, pitch: 0, vpitch: 0, roll: 0, vroll: 0, sx: 0, vsx: 0, sy: 0, vsy: 0, pvx: 0, pvy: 0 };
+const neck = { lead: 0, yaw: 0, vyaw: 0, pitch: 0, vpitch: 0, roll: 0, vroll: 0, sx: 0, vsx: 0, sy: 0, vsy: 0, pvx: 0, pvy: 0 };
 const head = { yaw: 0, pitch: 0, roll: 0 }, _mq = new THREE.Vector3();
 function mountCamera(rig, shake, simDt) {
   let yaw, pitch, roll, base, off;
@@ -289,17 +289,22 @@ function mountCamera(rig, shake, simDt) {
   if (dt > 0) {
     const spring = (key, target, k, c) => { n['v' + key] += ((target - n[key]) * k - n['v' + key] * c) * dt; n[key] += n['v' + key] * dt; };
     let dy = yaw - n.yaw; dy -= Math.round(dy / (Math.PI * 2)) * Math.PI * 2; // shortest way round
-    spring('yaw', n.yaw + dy, 300, 34);   // stiff + critically damped: a beat of lag, no wobble
-    spring('pitch', pitch * 0.85, 260, 32);
+    // riders look where they're going: eyes lead into a turn instead of trailing it
+    let yawRate = yaw - (n.lastYaw ?? yaw); yawRate = (yawRate - Math.round(yawRate / (Math.PI * 2)) * Math.PI * 2) / dt; n.lastYaw = yaw;
+    n.lead += (Math.max(-0.14, Math.min(0.14, yawRate * 0.12)) - n.lead) * (1 - Math.exp(-dt * 4));
+    spring('yaw', n.yaw + dy + n.lead, 300, 34);   // stiff + critically damped: a beat of lag, no wobble
+    spring('pitch', pitch * 0.85 - landDip * 0.06, 260, 32); // small nod when the suspension takes a landing
     spring('roll', roll * 0.85, 240, 31);  // mostly locked to the bike's tilt
     const ax = (ball.vel.x - n.pvx) / dt, ay = (ball.vel.y - n.pvy) / dt; n.pvx = ball.vel.x; n.pvy = ball.vel.y;
     spring('sx', Math.max(-0.12, Math.min(0.12, -ax * 0.002)), 120, 22);
-    spring('sy', Math.max(-0.1, Math.min(0.1, -ay * 0.0015)), 120, 22);
+    spring('sy', Math.max(-0.1, Math.min(0.1, -ay * 0.0015)) - landDip * 0.12, 120, 22);
   }
   _eul.set(pitch, yaw, roll, 'YXZ');
   camera.position.copy(off.applyEuler(_eul).add(base));
   camera.position.x += n.sx; camera.position.y += n.sy;
-  _eul.set(n.pitch + (S.camera === 'cockpit' ? -0.09 : -0.03), n.yaw, n.roll, 'YXZ');
+  // faint road buzz through the frame, rising with speed (not a wobble — a hum)
+  const buzz = ball.grounded ? Math.min(1, ball.vt / 40) * 0.0025 : 0;
+  _eul.set(n.pitch + (S.camera === 'cockpit' ? -0.09 : -0.03) + Math.sin(simTime * 53) * buzz, n.yaw + Math.sin(simTime * 47.3) * buzz * 0.6, n.roll + Math.sin(simTime * 61.7) * buzz, 'YXZ');
   camera.quaternion.setFromEuler(_eul);
   camera.position.x += (Math.sin(simTime * 37.1) + Math.sin(simTime * 23.3)) * shake;
   camera.position.y += (Math.sin(simTime * 41.7) + Math.sin(simTime * 19.9)) * shake;
