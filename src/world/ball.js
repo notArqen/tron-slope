@@ -90,19 +90,20 @@ export class Ball {
       this.bank = g.th;
       pl.point(this.u, g, P);
       const vt = this.vt;
-      // drift (Shift / ↓ / S, grounded only): more turn authority, speed eases down ~10%
+      // drift (Shift / ↓ / S, grounded only): brakes hard toward ~70% speed, and the slower it gets the tighter it turns
       this.drifting = !this.isSim && (k.has('ShiftLeft') || k.has('ShiftRight') || k.has('ArrowDown') || k.has('KeyS'));
-      if (this.drifting) { if (!this.driftFrom) this.driftFrom = this.speed; this.speed += (this.driftFrom * 0.9 - this.speed) * (1 - Math.exp(-dt * 3)); }
+      if (this.drifting) { if (!this.driftFrom) this.driftFrom = this.speed; this.speed = Math.max(this.driftFrom * 0.7, this.speed - 28 * dt); }
       else this.driftFrom = 0;
-      const a = this.input * STEER_ACC * (this.drifting ? 1.8 : 1) - CENTRIFUGAL * vt * vt * this.bd.kappa + P.pull + pl.jetAt(this.z);
-      this.vu += a * dt; this.vu *= Math.exp(-STEER_DAMP * (pl.pipe && Math.abs(this.u) > PIPE_F ? 0.35 : 1) * (this.drifting ? 0.8 : 1) * dt);
+      const grip = this.drifting ? 1.8 + 4 * (1 - this.speed / this.driftFrom) : 1; // up to ~3×
+      const a = this.input * STEER_ACC * grip - CENTRIFUGAL * vt * vt * this.bd.kappa + P.pull + pl.jetAt(this.z);
+      this.vu += a * dt; this.vu *= Math.exp(-STEER_DAMP * (pl.pipe && Math.abs(this.u) > PIPE_F ? 0.35 : 1) * (this.drifting ? 0.6 : 1) * dt);
       const pu = this.u;
       this.u += this.vu * dt;
       // deck slope behind and ahead (probes continue past platform ends)
       const hB = pl.heightAt(this.z + 1), h0 = pl.heightAt(this.z), hF = pl.heightAt(this.z - 1);
       const slopeTan = hB - h0, slopeAhead = h0 - hF;
       const vmax = vmaxAt(this.z);
-      this.speed = Math.max(V_MIN, Math.min(vmax, this.speed + accelAt(this.speed, slopeTan, vmax) * dt));
+      if (!this.drifting) this.speed = Math.max(V_MIN, Math.min(vmax, this.speed + accelAt(this.speed, slopeTan, vmax) * dt));
       // boost pads: surge that decays + small permanent gain (Course.step mirrors this)
       const nz = this.z - vt * dt;
       for (const pz of pl.pads) if (this.z > pz && nz <= pz) { this.speed = Math.min(vmaxAt(this.z), this.speed + BOOST_KEEP); this.boost += BOOST_ADD; this.boosted = 0.6; }

@@ -113,7 +113,7 @@ export class LightCycle {
     this.trail = new THREE.Mesh(g, worldMaterial({ uniforms: { ...shared }, vertexShader: TRAIL_VS, fragmentShader: TRAIL_FS, side: THREE.DoubleSide }));
     this.trail.frustumCulled = false; this.trail.visible = false;
     scene.add(this.trail);
-    this.pts = []; this.yaw = 0; this.lean = 0; this.pitch = 0; this.spin = 0;
+    this.pts = []; this.yaw = 0; this.slide = 0; this.lean = 0; this.pitch = 0; this.spin = 0;
     this.v = new THREE.Vector3(); this.tmp = new THREE.Vector3();
   }
 
@@ -131,12 +131,15 @@ export class LightCycle {
       this.yaw += (yaw - this.yaw) * (1 - Math.exp(-dt * 12));
       this.pitch += (Math.atan2(vel.y, sp) - this.pitch) * (1 - Math.exp(-dt * 10));
       const leanT = Math.max(-0.6, Math.min(0.6, -(ball.vu || 0) * 0.08)) + (ball.grounded ? -ball.bank : 0);
-      this.lean += (leanT - this.lean) * (1 - Math.exp(-dt * 8));
+      this.lean += (leanT * (ball.drifting ? 1.6 : 1) - this.lean) * (1 - Math.exp(-dt * 8));
+      // drift: nose swings into the turn, tail kicks out — the bike goes sideways, not just leaned
+      const slideT = ball.drifting && ball.grounded ? Math.max(-0.7, Math.min(0.7, -(ball.input || Math.sign(ball.vu || 0)) * 0.55)) : 0;
+      this.slide += (slideT - this.slide) * (1 - Math.exp(-dt * 6));
       this.spin += (ball.speed * dt) / 0.4;
     }
     // bike sits on the deck under the collision sphere
     this.group.position.set(ball.x, ball.y - 0.55, ball.z);
-    this.group.rotation.set(0, this.yaw, 0);
+    this.group.rotation.set(0, this.yaw + this.slide, 0);
     this.pivot.rotation.set(this.pitch, 0, this.lean, 'YXZ');
     for (const w of this.wheels) w.rotation.x = -this.spin;
 
