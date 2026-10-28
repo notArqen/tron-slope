@@ -6,7 +6,9 @@ import { DZ, obstacleBoxes, pipeProfile } from './course.js';
 // Renders the streamed course: pooled deck + tunnel meshes (geometry rewritten in
 // place on reuse, never reallocated) and one instanced mesh for every obstacle box.
 
-const MAX_SAMPLES = 640;
+// must cover the longest platform the generator builds (Course.run caps at MAX_PLATFORM_SAMPLES);
+// a shorter limit truncated long straights/kickers at high speed and the ball rode on invisible deck
+const MAX_SAMPLES = 2000;
 const LIP = 0.7;
 const TUBE_H = 5;
 

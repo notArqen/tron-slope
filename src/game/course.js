@@ -7,6 +7,7 @@ import { SLOPE_TAN, trackY } from '../world/shared.js';
 // in advance and moving hazards can be validated against their real phase.
 
 export const DZ = 0.5;
+export const MAX_PLATFORM_SAMPLES = 1900;
 export const GRID = { X0: -26, DX: 0.05, N: 1041 };
 export const G = 28;               // gameplay gravity (m/s²)
 export const BALL_R = 0.55;
@@ -413,7 +414,8 @@ export class Course {
 
   // generic deck run: per-step callbacks give target hw / cx / bank / slope
   run(chunk, pl, len, f) {
-    const c = this.cur, n = Math.max(2, Math.round(len / DZ));
+    // capped below the renderer's per-platform sample limit (courseView MAX_SAMPLES = 2000)
+    const c = this.cur, n = Math.max(2, Math.min(MAX_PLATFORM_SAMPLES, Math.round(len / DZ) + pl.n) - pl.n);
     for (let i = 0; i <= n; i++) {
       const k = i / n;
       const s = f(k, i * DZ, n * DZ);
