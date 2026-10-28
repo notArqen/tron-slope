@@ -127,6 +127,7 @@ const overlay = new Overlay(settings, perf, { probe: (key) => startProbe(key) })
 // ---------------------------------------------------------------- sizing / dynamic resolution
 let dynScale = 1, dynCooldown = 0, camRoll = 0;
 let idleFrameDone = false;
+const camSurf = {};
 let airDip = 0, hideRider = false, topSpeed = 0, lookX = 0, lookY = 0, heldBank = 0, surgeT = 0, landDip = 0, boostPunch = 0, lastHundred = 0; // feel: landing dip, boost jolt, score milestones // paused: draw once, then stop until something changes
 function internalSize() {
   const dpr = Math.min(devicePixelRatio || 1, S.maxDpr);
@@ -468,7 +469,13 @@ function frame(now) {
   // camera rigs (C cycles, 1–7 pick): back/up offsets, look-ahead, smoothing; never track geometry
   const rig = CAMS[S.camera] || CAMS.chase;
   // falling from a jump: chase rigs dip and pull back so the landing zone stays visible
-  const fallDip = rig.inside ? 0 : Math.max(0, Math.min(1.6, (ball.grounded ? 0 : -ball.vy) * 0.07));
+  // only big drops: dip under the bike once it's well above whatever deck it will land on (small hops stay put)
+  let bigAir = 0;
+  if (!ball.grounded && !rig.inside) {
+    const below = course.surfaceAt(ball.x, ball.z, course.clockAt(ball.z), ball.y, camSurf);
+    bigAir = below ? Math.max(0, Math.min(1, (ball.y - camSurf.y - 4) / 6)) : 1;
+  }
+  const fallDip = Math.max(0, Math.min(1.6, -ball.vy * 0.07)) * bigAir;
   airDip += (fallDip - airDip) * (1 - Math.exp(-dt * 5));
   const swing = rig.swing ? Math.sin(simTime * 0.35) * rig.swing : 0;
   const target = tmpV.set(ball.x + swing, ball.y + rig.up - landDip - airDip, ball.z + rig.back + airDip * 0.8);
