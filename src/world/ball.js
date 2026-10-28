@@ -140,8 +140,10 @@ export class Ball {
         // leave the deck: off the side, off a lip, over a crest, out of a pipe, or a tile vanished
         cur && cur.bend(this.z, this.bd);
         const head = this.vt * (this.bd.dcx || 0);
+        this.airHead = head;
         if (pipeLaunch) { this.vy = Math.abs(this.vu) * 0.95; this.vx = head; this.u = pu; }
-        else { this.vx = this.vu * Math.cos(g.th) + head; this.vy = -slopeTan * this.vt; }
+        // hands off the keys = you fly straight: leftover sideways slip (bank pull, jets, curve) isn't carried into the jump
+        else { this.vx = (this.input ? this.vu * Math.cos(g.th) : 0) + head; this.vy = -slopeTan * this.vt; }
         this.x = P.x;
         this.y = py + this.vy * dt;
         this.grounded = false; this.pl = null;
@@ -152,6 +154,8 @@ export class Ball {
       this.airIn = (this.airIn || 0) + (this.input - (this.airIn || 0)) * Math.min(1, dt * 4);
       // air control scales with speed: barely any when slow, up to ~35% of ground steering when fast
       this.vx += this.airIn * STEER_ACC * (0.06 + 0.29 * Math.min(1, this.speedN)) * dt;
+      // no input: sideways drift dies away so a straight jump stays straight
+      if (!this.input) { this.airIn *= Math.exp(-dt * 10); this.vx += ((this.airHead || 0) - this.vx) * (1 - Math.exp(-dt * 3)); }
       this.y += this.vy * dt;
       this.x += this.vx * dt;
       this.airT += dt;

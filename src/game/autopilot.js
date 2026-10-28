@@ -10,7 +10,7 @@ const SEGS = [-1, 0, 1];
 const PLANS = [];
 for (const a of SEGS) for (const b of SEGS) for (const c of SEGS) PLANS.push([a, b, c]);
 const SEG_T = 0.3, HORIZON = 1.5, SIM_DT = 1 / 120;
-const FIELDS = ['x', 'y', 'z', 'u', 'vu', 'speed', 'boost', 'vx', 'vy', 'grounded', 'pl', 'dead', 'deathCause', 'runTime', 'dist', 'bank'];
+const FIELDS = ['x', 'y', 'z', 'u', 'vu', 'speed', 'boost', 'vx', 'vy', 'grounded', 'pl', 'dead', 'deathCause', 'runTime', 'dist', 'bank', 'airHead', 'airIn'];
 
 export class Autopilot {
   constructor(shared, course) {
