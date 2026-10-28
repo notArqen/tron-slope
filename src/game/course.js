@@ -26,7 +26,7 @@ const TUBE_H = 5;
 export const BOOST_ADD = 22, BOOST_KEEP = 4, BOOST_TAU = 1.6; // surge (m/s), permanent gain, surge decay (s)
 // half-pipe cross-section: flat floor ±PIPE_F, quarter-circle walls of radius PIPE_R
 export const PIPE_F = 2.0, PIPE_R = 2.2, PIPE_LAUNCH = 0.95;
-const LOOKAHEAD = 260, BEHIND = 40;
+const LOOKAHEAD = 260, BEHIND = 160; // keeps the last few seconds of track for the death replay
 
 // validator lateral grid
 const GX0 = -26, GDX = 0.05, GN = 1041;

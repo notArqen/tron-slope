@@ -210,7 +210,7 @@ function startRun(newSeed, { attract = false } = {}) {
   city.reset(0); dys.reset(0); floaters.reset(0); cycle.reset();
   pipeline.historyValid = false;
   camPos.set(0, ball.y + 2.6, 7.2); lookY = ball.y - 0.6; lookX = ball.x; heldBank = 0;
-  deathT = -1; wreck = null; acc = 0; lastHundred = 0; topSpeed = 0;
+  deathT = -1; wreck = null; recI = 0; replay = null; acc = 0; lastHundred = 0; topSpeed = 0;
   phase = attract ? 'menu' : 'run';
   if (!attract) { tracks.played(seed); menu.hideTitle(); menu.hidePause(); hud.startRun(seedToString(seed)); hud.setAutoplay(autoplay); autopilot.reset(); }
 }
@@ -334,6 +334,70 @@ function crashCam(shake, dt) {
   camera.lookAt(_crashLook);
 }
 
+// death replay: every frame of the run is recorded into a short ring buffer; on death the last ~2.5 s
+// before the hit plus ~1 s of the crash play back (after the crash-cam shots) in slow motion from an orbiting camera. Moving obstacles replay
+// for free (they're driven by the course clock at the ball's z), and the obstacle you hit un-breaks, then breaks again.
+const REC_N = 360, REPLAY_RATE = 0.35, rec = [];
+let recI = 0, replay = null;
+function recordFrame(dt) {
+  const f = rec[recI % REC_N] || (rec[recI % REC_N] = { mq: new THREE.Quaternion(), gp: new THREE.Vector3(), gq: new THREE.Quaternion(), pq: new THREE.Quaternion() });
+  f.dt = dt; f.x = ball.x; f.y = ball.y; f.z = ball.z; f.dead = deathT >= 0;
+  f.mq.copy(ball.mesh.quaternion);
+  f.gp.copy(cycle.group.position); f.gq.copy(cycle.group.quaternion); f.pq.copy(cycle.pivot.quaternion);
+  recI++;
+}
+function startReplay() {
+  const n = Math.min(recI, REC_N), first = recI - n;
+  let deathI = -1;
+  for (let i = first; i < recI; i++) if (rec[i % REC_N].dead) { deathI = i; break; }
+  if (deathI < 0 || n < 30) return false;
+  let start = deathI, back = 0;
+  while (start > first && back < 2) back += rec[--start % REC_N].dt;
+  let end = deathI, fwd = 0;
+  while (end < recI - 1 && fwd < 1.1) fwd += rec[++end % REC_N].dt;
+  replay = { i: start, end, t: 0, deathI, time: 0, ang: Math.random() * Math.PI * 2, smashed: ball.hitObj };
+  if (ball.hitObj) ball.hitObj.smashed = false; // it's back, for now
+  phase = 'replay';
+  hud.msgEl.textContent = 'replay · any key to skip'; hud.msgEl.className = 'msg';
+  return true;
+}
+function endReplay() {
+  if (phase !== 'replay') return;
+  if (replay.smashed) replay.smashed.smashed = true;
+  replay = null; hud.msgEl.textContent = '';
+  phase = 'summary'; hud.showSummary();
+}
+const _rq = new THREE.Quaternion();
+function stepReplay(dt) {
+  const r = replay, isCycle = S.vehicle === 'cycle';
+  r.t += dt; r.time += dt;
+  while (r.i < r.end && r.t >= rec[(r.i + 1) % REC_N].dt) {
+    r.t -= rec[++r.i % REC_N].dt;
+    if (r.i === r.deathI && r.smashed) { // the moment of impact, again
+      r.smashed.smashed = true;
+      particles.shardColor.copy(shared.uNeon2.value);
+      particles.emit('shard', _v3.set(ball.x, ball.y, ball.z), new THREE.Vector3(0, 4, -20), 70);
+      shakeImpact = 1;
+    }
+  }
+  if (r.i >= r.end) { endReplay(); return; }
+  const a = rec[r.i % REC_N], b = rec[(r.i + 1) % REC_N], k = Math.min(1, r.t / b.dt);
+  ball.x = a.x + (b.x - a.x) * k; ball.y = a.y + (b.y - a.y) * k; ball.z = a.z + (b.z - a.z) * k;
+  ball.mesh.visible = !isCycle; cycle.trail.visible = false;
+  ball.mesh.position.set(ball.x, ball.y, ball.z); ball.mesh.quaternion.copy(_rq.copy(a.mq).slerp(b.mq, k));
+  cycle.group.visible = isCycle;
+  cycle.group.position.lerpVectors(a.gp, b.gp, k); cycle.group.quaternion.copy(_rq.copy(a.gq).slerp(b.gq, k));
+  cycle.pivot.quaternion.copy(_rq.copy(a.pq).slerp(b.pq, k));
+}
+// slow orbit around the action, a little above it
+function replayCam() {
+  const r = replay; if (!r) return;
+  const ang = r.ang + r.time * 0.5, rad = 6.5;
+  camera.position.set(ball.x + Math.sin(ang) * rad, ball.y + 2.4, ball.z + Math.cos(ang) * rad);
+  camera.up.set(0, 1, 0);
+  camera.lookAt(ball.x, ball.y + 0.3, ball.z);
+}
+
 // crash tumble: ballistic body that bounces along whatever deck is under it
 const _surf = {}, _eul = new THREE.Euler(), _v3 = new THREE.Vector3(), WRECK_DY = -0.3;
 let _hull = null;
@@ -414,6 +478,7 @@ menu.setVehicle(S.vehicle);
 const overlayOpen = () => !document.getElementById('overlay').hidden;
 addEventListener('keydown', (e) => {
   if (e.defaultPrevented || overlayOpen() || e.target.closest?.('#overlay, #summary input, #menu input')) return;
+  if (phase === 'replay') { e.preventDefault(); endReplay(); return; } // any key skips the replay
   if (phase === 'run' && e.code === 'Space') { e.preventDefault(); pause(true); return; }
   if (phase === 'paused' && quickPaused && (e.code === 'Space' || e.code === 'Escape')) { e.preventDefault(); resume(); return; }
   if (phase === 'run' && (e.code === 'Escape' || e.code === 'KeyP')) { e.preventDefault(); pause(); return; }
@@ -460,7 +525,7 @@ function frame(now) {
   const rawDt = perf.frame(now) / 1000;
   const dt = Math.min(rawDt, 1 / 20);
   // slow-mo for 0.4 s after death, frozen once the summary is up
-  const timeScale = phase === 'paused' ? 0 : phase === 'dying' && deathT < 0.4 ? 0.25 : 1;
+  const timeScale = phase === 'paused' ? 0 : phase === 'replay' ? REPLAY_RATE : phase === 'dying' && deathT < 0.4 ? 0.25 : 1;
   const simDt = S.freezeTime ? 0 : dt * timeScale;
   simTime += simDt;
 
@@ -488,18 +553,20 @@ function frame(now) {
   // every 100 points: a power surge races down the grid and the score flashes
   if (phase === 'run') { const h = Math.floor(score() / 100); if (h > lastHundred) { lastHundred = h; surgeT = 1; hud.pulse(); } }
   surgeT = Math.max(0, surgeT - dt);
-  {
+  if (phase === 'replay') stepReplay(simDt);
+  else {
     const alive = phase !== 'dying' && phase !== 'summary', isCycle = S.vehicle === 'cycle';
     const fp = hideRider && S.camera === 'first';
     ball.mesh.visible = (alive || !!wreck) && !isCycle && !hideRider;
     cycle.update(ball, simDt, isCycle, alive && !fp);
     if (wreck) stepWreck(simDt, isCycle);
+    if ((phase === 'run' || phase === 'dying') && simDt > 0) recordFrame(simDt);
   }
   course.fill(ball.z, 1);
   courseView.update(course.clockAt(ball.z), ball.z);
   if (deathT >= 0) {
     deathT += dt;
-    if (phase === 'dying' && (wreck ? deathT > 2 || wreck.still > 0.4 || wreck.fell : deathT > 1.2)) { phase = 'summary'; hud.showSummary(); }
+    if (phase === 'dying' && (wreck ? deathT > 2.3 || wreck.fell : deathT > 1.2)) { if (autoplay || !startReplay()) { phase = 'summary'; hud.showSummary(); } }
     if (autoplay && phase === 'summary' && deathT > 3.2) startRun(randomSeed()); // ambience: keep rolling
   }
   glitch = Math.max(0, glitch - dt * 0.9);
@@ -568,7 +635,8 @@ function frame(now) {
   camRoll += (0 - (ball.vu || 0) * (ball.drifting ? 0.02 : 0.012) - camRoll) * (1 - Math.exp(-dt * 6)); // lean into steering
   camera.rotateZ(Math.max(-0.21, Math.min(0.21, camRoll)));
   if (rig.inside) mountCamera(rig, shake, simDt);
-  if (wreck && CAMS[S.camera]?.inside) crashCam(shake, dt);
+  if (wreck && CAMS[S.camera]?.inside && phase === 'dying') crashCam(shake, dt);
+  if (phase === 'replay') replayCam();
   // debug: window.__camOverride = (cam, ball) => {...} lets tooling place the camera (e.g. bike side view)
   if (window.__camOverride) window.__camOverride(camera, ball);
   camera.fov = 62 + (S.fovKick ? S.fovKickAmt * Math.min(1.15, sp) + boostPunch * 7 : 0);
