@@ -305,6 +305,28 @@ function mountCamera(rig, shake, simDt) {
   camera.position.y += (Math.sin(simTime * 41.7) + Math.sin(simTime * 19.9)) * shake;
 }
 
+// crash from an inside cam: hard cut to a fixed camera bolted to a building beside the track, which pans
+// to keep the wreck in shot; ~1.1 s in it cuts once more to a lower angle from the other side
+const _crashLook = new THREE.Vector3();
+function crashCam(shake, dt) {
+  const w = wreck, t = deathT;
+  const shot = t < 1.1 ? 0 : 1;
+  if (w.shot !== shot) {
+    const g = course.centreAt(ball.z - 14, {}), side = shot === 0 ? (Math.random() < 0.5 ? -1 : 1) : -(w.side || 1);
+    w.side = side; w.shot = shot;
+    w.cam = shot === 0
+      ? new THREE.Vector3(g.cx + side * (12 + Math.random() * 6), ball.y + 6 + Math.random() * 4, ball.z - 12 - Math.random() * 10)
+      : new THREE.Vector3(ball.x + side * 7, ball.y + 1.5, ball.z - 9);
+    _crashLook.set(ball.x, ball.y, ball.z);
+  }
+  _crashLook.lerp(_v3.set(ball.x, ball.y, ball.z), 1 - Math.exp(-dt * 8)); // a camera operator panning, slightly behind
+  camera.position.copy(w.cam);
+  camera.position.x += Math.sin(simTime * 37.1) * shake * 0.3;
+  camera.position.y += Math.sin(simTime * 41.7) * shake * 0.3;
+  camera.up.set(0, 1, 0);
+  camera.lookAt(_crashLook);
+}
+
 // crash tumble: ballistic body that bounces along whatever deck is under it
 const _surf = {}, _eul = new THREE.Euler(), _v3 = new THREE.Vector3(), WRECK_DY = -0.3;
 let _hull = null;
@@ -539,6 +561,7 @@ function frame(now) {
   camRoll += (0 - (ball.vu || 0) * (ball.drifting ? 0.02 : 0.012) - camRoll) * (1 - Math.exp(-dt * 6)); // lean into steering
   camera.rotateZ(Math.max(-0.21, Math.min(0.21, camRoll)));
   if (rig.inside) mountCamera(rig, shake, simDt);
+  if (wreck && CAMS[S.camera]?.inside) crashCam(shake, dt);
   // debug: window.__camOverride = (cam, ball) => {...} lets tooling place the camera (e.g. bike side view)
   if (window.__camOverride) window.__camOverride(camera, ball);
   camera.fov = 62 + (S.fovKick ? S.fovKickAmt * Math.min(1.15, sp) + boostPunch * 7 : 0);
