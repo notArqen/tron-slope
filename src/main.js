@@ -326,6 +326,11 @@ function frame(now) {
   ball.sync();
   if (phase === 'run') topSpeed = Math.max(topSpeed, ball.vt);
   // feel: hard landings dip the camera, shake it, and spark; boosts punch the FOV
+  // drift sparks off the rear + a touch more camera roll
+  if (phase === 'run' && ball.drifting && ball.grounded && simDt > 0) {
+    particles.shardColor.setRGB(1, 0.55, 0.15);
+    particles.emit('shard', new THREE.Vector3(ball.x - Math.sign(ball.vu || 1) * 0.3, ball.y - 0.45, ball.z + 0.6), new THREE.Vector3(-(ball.vu || 0) * 0.4, 0, -ball.vt * 0.6), 2);
+  }
   if (ball.landed) {
     landDip = Math.max(landDip, ball.landed * 0.6); shakeImpact = Math.max(shakeImpact, ball.landed * 0.35);
     particles.shardColor.copy(shared.uNeon.value);
@@ -408,7 +413,7 @@ function frame(now) {
   camera.lookAt(camLook);
   hideRider = !!rig.inside;
   // roll with the deck bank (max 12°)
-  camRoll += (0 - (ball.vu || 0) * 0.012 - camRoll) * (1 - Math.exp(-dt * 6)); // lean into steering
+  camRoll += (0 - (ball.vu || 0) * (ball.drifting ? 0.02 : 0.012) - camRoll) * (1 - Math.exp(-dt * 6)); // lean into steering
   camera.rotateZ(Math.max(-0.21, Math.min(0.21, camRoll)));
   // debug: window.__camOverride = (cam, ball) => {...} lets tooling place the camera (e.g. bike side view)
   if (window.__camOverride) window.__camOverride(camera, ball);

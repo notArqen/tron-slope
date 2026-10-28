@@ -90,8 +90,12 @@ export class Ball {
       this.bank = g.th;
       pl.point(this.u, g, P);
       const vt = this.vt;
-      const a = this.input * STEER_ACC - CENTRIFUGAL * vt * vt * this.bd.kappa + P.pull + pl.jetAt(this.z);
-      this.vu += a * dt; this.vu *= Math.exp(-STEER_DAMP * (pl.pipe && Math.abs(this.u) > PIPE_F ? 0.35 : 1) * dt);
+      // drift (Shift / ↓ / S, grounded only): more turn authority, speed eases down ~10%
+      this.drifting = !this.isSim && (k.has('ShiftLeft') || k.has('ShiftRight') || k.has('ArrowDown') || k.has('KeyS'));
+      if (this.drifting) { if (!this.driftFrom) this.driftFrom = this.speed; this.speed += (this.driftFrom * 0.9 - this.speed) * (1 - Math.exp(-dt * 3)); }
+      else this.driftFrom = 0;
+      const a = this.input * STEER_ACC * (this.drifting ? 1.8 : 1) - CENTRIFUGAL * vt * vt * this.bd.kappa + P.pull + pl.jetAt(this.z);
+      this.vu += a * dt; this.vu *= Math.exp(-STEER_DAMP * (pl.pipe && Math.abs(this.u) > PIPE_F ? 0.35 : 1) * (this.drifting ? 0.8 : 1) * dt);
       const pu = this.u;
       this.u += this.vu * dt;
       // deck slope behind and ahead (probes continue past platform ends)
